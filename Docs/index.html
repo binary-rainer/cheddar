@@ -1,0 +1,117 @@
+<html>
+<head>
+  <title>Cheddar</title>
+  <!-- Changed by: Rainer Koehler, 10-Nov-2009 -->
+  <link rel=stylesheet type="text/css" href="../style.css">
+  <link rel="icon" href="transparent.ico" type="image/ico">
+  <link rel="shortcut icon" href="transparent.ico" type="image/ico">
+</head>
+<body>
+<h1>Cheddar</h1>
+<p>
+Cheddar is the special expert's tool for preparation of MIDI (and
+maybe other VLTI) observations.  It shows elevation, position angle
+and length of the projected baseline for a list of targets during one
+night.
+</p>
+<H2>Download and Installation</H2>
+<p>
+All you need is a computer with tcl/tk installed and
+<A href="Cheddar-v2.6.tar.gz">this tarball (Cheddar version 2.6)</a>.
+</p>
+<p>
+Ungzip it, untar it, cd to the "Cheddar" directory, and start it:
+<pre>
+	./cheddar test.cheddar
+</pre>
+There is also a Readme-file which, of course, nobody ever reads.
+
+<!--H2>News</H2>
+<table>
+<tr>
+  <td valign=top align=right><nobr>10-Nov-09:</nobr></td>
+  <td><a href="Cheddar-v2.6.tar.gz">Version 2.6</a><br>
+    Thorsten Ratzka created a nice display of the uv-plane-coverage.
+    I added a print-function to it, and a print button in the
+    baseline-window, since nobody remembered that you can actually
+    print the baseline-diagram...<br>
+    &nbsp;</td></tr>
+<tr>
+  <td valign=top align=right><nobr>29-Dec-08:</nobr></td>
+  <td><a href="Cheddar-v2.5.tar.gz">Version 2.5</a><br>
+    The size of the diagram is now automatically adjusted to be large
+    enough for all objects.  If the diagram is larger than the window,
+    then one has to scroll down to see the objects at the end of the
+    list.<br>
+    The e-mail- and www-addresses have been changed from Sterrewacht
+    Leiden to LSW Heidelberg.  Please note that I do not read e-mail
+    sent to my address in Leiden any more, since about 104% of the
+    messages are SPAM.<br>
+    &nbsp;</td></tr>
+<tr>
+  <td valign=top align=right><nobr>29-Jul-08:</nobr></td>
+  <td><a href="Cheddar-v2.4.tar.gz">Version 2.4</a><br>
+    With tcl/tk version 8.5, the Postscript-output looked very funny.  This has been fixed.<br>
+    The window showing the projected baseline will no longer crash if a new object list loaded.<br>
+    &nbsp;</td></tr>
+<tr>
+  <td valign=top align=right><nobr>9-Jan-07:</nobr></td>
+  <td><a href="Cheddar-v2.3.tar.gz">Version 2.3</a><br>
+    "macified menus": On Mac computers, the menu bar is at the top of
+    the screen.<br>
+    The baseline-handling is even more foolproof than before.  I won't
+    tell you what has changed, you would only try to outsmart (or
+    outfool) it.<br>&nbsp;</td></tr>
+<tr>
+  <td valign=top align=right><nobr>1-Jun-06:</nobr></td>
+  <td><a href="Cheddar-v2.2.tar.gz">Version 2.2</a><br>
+    Fixed another bug in the code that reads the baseline
+    from the input-file.<br>&nbsp;</td></tr>
+<tr>
+  <td valign=top><nobr>22-Mar-06:</nobr></td>
+  <td>Released <a href="Cheddar-v2.1.tar.gz">Version 2.1</a>.  New bugs and features are:
+    <OL>
+      <li>North is now straight up in the baseline-map.</li>
+      <li>Position angles are in the range -90 to 270 degrees</li>
+      <li>The table is redisplayed automatically if something changes</li>
+      <li>The text size can be changed</li>
+    </OL></td></tr>
+<tr>
+  <td valign=top><nobr>10-Mar-06:</nobr></td>
+   <td>Disabled the undocumented feature that promoted the new baseline-window.
+       Cheddar now reads the baseline from the input-file.</td>
+ </tr>
+</table-->
+</p>
+<H2>Screenshots</H2>
+<p>
+The main window (before version 2.5):</p>
+<center><IMG src="main.gif" alt="Main cheddar window"></center>
+<p>
+The baseline window:</p>
+<center><IMG src="baseline.gif" alt="Cheddar's baseline window"></center>
+
+<H2>Links</H2>
+<p>
+<A Href="http://www.strw.leidenuniv.nl/~nevec/MIDI">The MIDI-webpage at Sterrewacht Leiden</A>.
+</p>
+<p>
+<!-- DOES NOT WORK ANY MORE: A Href="http://www.eso.org/observing/etc/doc/vlti/baseline/vltistations.html" target=_blank>
+The webpage at ESO describing the VLTI station layout</A>
+(including the list of valid baselines).
+</p-->
+
+<hr>
+<table width="100%">
+ <tr>
+  <td><address>
+   <a href="../index.html"><EM> Rainer K&ouml;hler</EM></A>
+   </address></td>
+  <td>
+   <div align=right>
+    Last modified: Mon May 11 15:45:20 2015
+   </div>
+  </td>
+ </tr>
+</table>
+</body> </html>
