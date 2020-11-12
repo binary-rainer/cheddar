@@ -1,0 +1,328 @@
+Brief user manual for "cheddar"
+-------------------------------
+
+Rainer Koehler (rainer.koehler@gmail.com)
+
+Last Change: Thu Nov 12 19:05:36 2020
+
+
+Cheddar is the special expert's tool for preparation of MIDI (and
+maybe other VLTI) observations.  It shows elevation, position angle
+and length of the projected baseline for a list of targets during one
+night.
+
+Version 2 has been very much improved based on our research of the
+behaviour of astronomers in front of computers.
+
+
+Where to get it
+---------------
+
+The official homepage is
+http://www.rainerkoehler.com/Cheddar
+
+It is written in tcl/tk (without any extensions) so it should run
+everywhere where tcl/tk is installed (even on Windows or Mac computers).
+
+
+BASIC USAGE
+-----------
+
+On Unix:
+  The simplest form is to call it with just the list of objects:
+
+	./cheddar test.objects
+
+  If this fails with an error message like "cheddar not found", tcl/tk
+  is not installed (properly).  You can try something like
+
+	wish cheddar test.objects
+  or
+	wish8.4 cheddar test.objects
+
+  If all else fails, find a sysadmin and ask him how to start a tcl/tk
+  script.
+
+
+On Windows:
+  You should rename it to "cheddar.tcl" so Windows knows that it is a
+  tcl/tk-script.  Then, you can start it by double-clicking on it.  It
+  will then ask you to select the object list.
+
+
+So, if all went well, you will see a window with a scale for Local
+Sidereal Time at the top, Universal Time at the bottom, and some lines
+and numbers inbetween.  Local Midnight is always in the center of the
+graph, the night is black (just like on Paranal), the civil/nautical/
+astronomical twilight are in different shades of blue, and the day is
+light blue.
+
+Each yellow horizontal line shows the time when an object is more than
+20 degrees above the horizon.  The name of the object is written over
+the graph.  The three lines of numbers show the elevation in degrees,
+the position angle of the projected baseline (North = 0, East = 90),
+and the length of the projected baseline in Meters.
+
+In the bottom left the date and the baseline is printed.  Defaults are
+the day the program is run and UT1-UT3.
+
+
+The object list
+---------------
+
+The objects are stored in a simple ascii file.  Here is an example:
+
+-----
+Tom Tauri	 04:21:59.4345 +19 32 06.429  2000.0
+Christoph's Baby 00 24 44.33   -27:08:25.5    2000.0
+The Mice	 12 46:10.18   +30 43 53.7    2000.0  "Name Mice" in Simbad
+Something going through Zenith  12:00:00 -24:37:40.61388 2000.0
+-----
+
+The coordinates can be written with spaces or ":" as separators, but
+there have to be hours, minutes, and seconds for Right Ascension, and
+degrees, minutes, and seconds for Declination.  Decimals are
+optional.
+
+Everything before the coordinates is taken as the object name.
+
+Everything after the coordinates is ignored.  This includes the epoch
+in the example, for our purpose it doesn't make a difference if the
+coordinates are 1900, 1950, or Stardate 47653,2.
+
+You can also specify the date and baseline in the file, e.g.
+
+Date:		24 Dec 1996
+Baseline:	UT1-UT3
+
+Lines that do not contain the "Date:" or "Baseline:" keywords, or
+anything that looks like a pair of coordinates are ignored.  So if
+your favourite object doesn't appear on the graph, check the format of
+the coordinates.
+
+
+Loading object files
+--------------------
+
+1. Give the filename on the command line, e.g.
+
+	cheddar test.cheddar
+
+   You can also list more than one file:
+
+	cheddar jong.cheddar jong_belegen.cheddar belegen.cheddar
+
+
+2. Select "Load" or "Append" in the "File" menu.  "Load" will replace
+   your current object file by the new one, while "Append" adds the
+   objects in the file to those already in memory.
+
+
+
+Specifying another observation date
+-----------------------------------
+
+1. Give the date as an argument on the command line:
+
+	cheddar test.objects 24-Dec-1996
+
+2. Put it in the object list like this:
+
+	Date:	24-Dec-1996
+
+3. Choose "Date" in the "Settings" menu and enter the date.
+
+
+Cheddar uses the tcl-command "clock scan" to interpret the date, so
+you can use funny things like "tomorrow" or "3 weeks ago", but the
+most useful formats are
+
+mm/dd/yy
+"monthname dd, yy"
+"dd monthname yy"
+yymmdd
+yy-mm-dd
+dd-monthname-yy
+
+dd is the day of the month (01-31), mm is the month as number (01-12),
+monthname is the english name of the month (maybe abbreviated), and yy
+is the year (two or four digits, i.e. 2003 or 03).  Don't forget to
+put quotes around dates containing spaces!
+
+When in doubt, try it and check if the date in the graph is what you
+want.
+
+
+Specifying another baseline
+---------------------------
+
+1. This can be given as command line argument:
+
+	cheddar.tcl test.objects A0-B0
+
+2. Put it in the object list:
+
+	Baseline:  U1-U3
+
+3. Choose "Baseline" in the "Settings" menu and drag the baseline (the
+   thick red line) to the stations you want.
+
+
+Cheddar knows all the baselines in the list on
+http://www.eso.org/observing/etc/doc/vlti/baseline/vltistations.html.
+
+This includes combinations of ATs and UTs, which will not be offered
+(as far as I know).  However, it does not include combinations like
+A0-A1, where the light would have to travel through the same light
+duct, leading to premature interference.
+
+In short: If cheddar complains that your specified baseline is not
+valid (or does not allow you to set it in the window), then this
+baseline cannot be chosen because of technical restrictions.
+
+To specify baselines with the UTs, you can use "UT" instead of "U",
+i.e. UT1-UT3 is equivalent to U1-U3.  For testing, there are also the
+baselines N-S and E-W.
+
+
+Specifying another observatory
+------------------------------
+
+Currently, cheddar can only be used for Paranal.  It's easy to change
+it in the source code: the geographic position is near the beginning
+of the file, and the baseline data fill more than half of the code.
+
+
+Printing
+--------
+
+Pick "Print in b/w" or "Print in color" in the "File" menu.  A window
+will pop up to allow you to enter the filename for the postscript
+file.  Default is the name of the your object list, with extensions
+like ".cheddar" or ".objects" removed and ".ps" appended.
+
+
+Changing the size of the window
+-------------------------------
+
+1. Give the height in pixels on the command line:
+
+	cheddar test.cheddar -h 512
+
+2. Resize the window in the usual way for your computer system,
+   e.g. by dragging at the lower right corner of the window.
+
+
+
+ADVANCED USAGE
+--------------
+
+More Command line options
+-------------------------
+
+Cheddar will print a list of options if you ask nicely:
+
+	cheddar -h
+
+Some of them are not really useful, expect for testing the program
+(e.g. there are no plans to change the geographic latitude of Paranal)
+
+The order of the command line arguments is not important, anything
+that looks like a date will be used as a date, anything that is a
+valid baseline is used as a baseline, and anything else will be used
+as a filename to read objects from.  If more than one date or baseline
+is given, only the last one is used.
+
+If cheddar gets confused because you chose to store your object list
+in a file called "UT1-UT3" or "tomorrow" and can't rename it, then put
+-f before the name:
+
+	cheddar -f tomorrow
+
+Similarly, -t and -b force interpration as date or baseline, resp.
+
+
+Printing a table of the results
+-------------------------------
+
+In the "File" menu, there is an item "Show table", which will open
+another window.  This window will conatin a table of elevation,
+P.A. and length of the baseline for all the objects, one line per
+hour.  There is (currently) no way to change the time step.
+You can also save the table in a text file.
+
+
+Saving the object list
+----------------------
+
+This is done with "Save" in the "File" menu.  It will write date,
+baseline, and names and positions of all the objects into a file.
+All the other information in the original object files is not kept in
+memory and therefore not saved to the new file.  This is handy if you
+changed date or baseline, or combined several object files.
+
+
+Switching the display of objects on or off
+------------------------------------------
+
+The menu "Objects" is a list of all the objects currently loaded,
+allowing to enable or disable the display of individual objects.
+This applies to the plot in the main window and the table (you have to
+select "Show table" again), but not the object list saved to a file.
+
+
+Keyboard shortcuts
+------------------
+
+In the main window:
+
+  l	Load object list
+  a	Append object list
+  s	Save object list
+  t	Show table
+  p	Print in b/w
+  P	Print in color
+  q	Quit
+  b	Set baseline
+  d	Set date
+  h	Show information about the program
+
+
+In the baseline window:
+
+  p	print diagram
+  q	close window
+
+
+In the date window:
+
+  +	next day (also the plus on the numeric keypad)
+  Up	next month
+PageUp	next year
+  -	previous day (also on the keypad)
+ Down 	previous month
+PageDwn previous year
+  q	close window
+
+
+In the table window:
+
+  s	save table
+  q	close window
+
+
+In the uv-plane window:
+
+  +	zoom in
+  =	zoom in
+  -	zoom out
+  p	print diagram
+  q	close window
+
+
+
+COMMENTS, QUESTIONS, and DONATIONS OF CHEESE
+--------------------------------------------
+
+should be directed to rainer.koehler@gmail.com or
+Friedrich.vom.Stein@gmx.de

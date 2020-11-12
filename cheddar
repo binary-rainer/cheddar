@@ -1,0 +1,1882 @@
+#!/bin/sh
+# -*- Mode: tcl -*-
+#
+# cheddar - a program to help preparing VLTI-observations
+#
+#    Copyright (C) 2006-2020 Rainer Koehler (rainer.koehler@gmail.com)
+#
+#    This program is free software; you can redistribute it and/or modify
+#    it under the terms of the GNU General Public License as published by
+#    the Free Software Foundation; either version 2 of the License, or
+#    (at your option) any later version.
+#
+#    This program is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU General Public License for more details.
+#
+#    You should have received a copy of the GNU General Public License
+#    along with this program; if not, write to the Free Software
+#    Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+#
+# Created:     Fri Feb 14 15:26:36 2003 by Koehler@sun47
+# Last Change: Thu Nov 12 19:00:07 2020
+#
+# Version 2.7
+#
+# Note: The version number is hardcoded in many places.
+#	We should make it a global variable.
+#
+#############################################################################\
+exec wish8.6 "$0" "$@"
+
+#puts [ttk::style theme names]
+#puts [ttk::style theme use]
+#puts [ttk::style theme use alt]
+
+set Debug 1
+
+set Googlemap "$env(HOME)/Projects/Cheddar/VLTI-gmap.gif"
+
+tk scaling 1	;# we want exaclty 1.0 pixels/point
+		 # font sizes in pix will screw up Postscript-output in tk8.5
+
+set Tsz	"M"
+set Font(par-S)  "Helvetica 10 bold"
+set Font(name-S) "Helvetica 8 bold"
+set Font(ePAl-S) "Helvetica 8"	;# Font for Elevation, P.A., and Length
+
+set Font(par-M)  "Helvetica 14 bold"
+set Font(name-M) "Helvetica 12 bold"
+set Font(ePAl-M) "Helvetica 12"
+
+set Font(par-L)  "Helvetica 18 bold"
+set Font(name-L) "Helvetica 16 bold"
+set Font(ePAl-L) "Helvetica 16"
+
+set Color(day)	  "SkyBlue3"	;# 108 166 205 = #6CA6CD
+set Color(civil)  "\#4060C8"
+set Color(nautic) "\#183078"
+set Color(astro)  "\#001050"
+set Color(night)  "Black"
+set Color(graph)  "Yellow"
+set Color(base)   "Gold"
+
+# make tk_dialog wide enough for Friedrich's comment
+option add *Dialog.msg.wrapLength 5i
+
+# for Mac-users, we recommend this color set:
+#
+# set Color(day)	  "\#a0a0c0"
+# set Color(civil)  "\#707090"
+# set Color(nautic) "\#505070"
+# set Color(astro)  "\#202040"
+# set Color(night)  "Black"
+# set Color(graph)  "White"
+# set Color(base)   "White"
+
+set PI  3.14159265359
+set PI2 6.28318530718
+
+# from ESO exposure time calculator:
+set longitude  70.40479659
+set latitude  -24.62794830
+#
+# set defaults
+#
+set sizex 640
+set sizey 480
+
+set time [clock seconds]
+set Baseline "U1-U3"
+
+set mydir [file dirname $argv0]
+
+#############################################################################
+
+proc print_help {} {
+    global argv0
+
+    puts "
+Cheddar
+
+Version 2.7
+Copyright (C) 2003-2020 Rainer Koehler (rainer.koehler@gmail.com)
+
+USAGE: $argv0 \[--\] \[-help\] \[-debug\] \[\[-f\] file\]
+		\[\[-b\] baseline\] \[\[-t\] date\] \[-height pixels\] \[-l latitude\]
+
+	file is the name of the file with the object-list
+	baseline are the two telescopes, e.g. UT1-UT3 or A0-B1
+	data is the date of the observations, e.g. 04-Jun-1967
+		(enclose it in quotes if it contains spaces)
+
+For Example: $argv0 test.objects 24-Dec-1996 U1-U3
+"
+}
+
+proc about_cheddar {} {
+    tk_dialog .a "About Cheddar"\
+"Cheddar
+Version 2.7
+
+Written 2003-2020 by Rainer Köhler (rainer.koehler@gmail.com)
+
+The mouse would like to add:
+Ik zou graag een stukje kaas willen hebben." info 0 Squeak
+}
+
+proc help_keys {} {
+    if [winfo exists .k] { destroy .k }
+    toplevel .k
+    wm title .k "Keyboard Shortcuts"
+
+    frame .k.bot -relief raised -bd 1
+    pack .k.bot -side bottom -fill both
+    frame .k.top -relief raised -bd 1
+    pack .k.top -side top -fill both -expand 1
+
+    message .k.msg -justify left -text\
+"   l  = load object list
+   a  = append object list
+   s  = save object list
+   b  = change baseline
+   d  = change date
+   h  = about cheddar
+   k  = keyboard shortcuts
+   u  = show uv plane
+   t  = show table
+  p/P = print b&w/color
+   q  = quit
+ left = decrease date by one day
+right = increase date by one day
+ down = decrease date by one month
+   up = increase date by one month
+PgDwn = decrease date by one year
+ PgUp = increase date by one year"
+
+    catch {.k.msg configure -font "-*-lucidatypewriter-medium-r-*-*-*-140-*-*-m-*-iso8859-*"}
+    pack .k.msg -in .k.top -side right -expand 1 -fill both -padx 3m -pady 3m
+
+    label .k.exp -bitmap info
+    pack .k.exp -in .k.top -side left -padx 3m -pady 3m
+
+    button .k.end -text "Dismiss" -command {destroy .k}
+    pack .k.end -in .k.bot -side left -expand 1 -padx 3m -pady 2m
+}
+
+if [regexp {^-h} [lindex $argv 0]] {
+    print_help
+    exit 0
+}
+
+#############################################################################
+
+image create photo expert -format gif -data\
+"R0lGODlhJgA6AMIAAAAAAK+vr/////oTQP+uAP///////////yH+Dk1hZGUgd2l0aCBHSU1Q
+ACH5BAEKAAcALAAAAAAmADoAAAP+eLrcCgzCM10D+FbKn7dagG0dN2WZVmFBK5Lnskas+ABu
+vsWoJOctCVAn+/g6uOEoOLQZkb/mi9nkHX3JajILtCKFumVNJMVGKNxXFjzujt5v95oSbE+l
+dddST69z02V6Sn06eYZ3U3ZOgDhrAgKNj2uAQVFhemJ7h0QPbp6bVJyWiniFXQ5bXZhrpnUg
+mnKkNSSoqn5jfykgnWVxVbshZLl/TLS7qaWqxq/IlGTPy6+CyXPAwYifldY0w3Bu2xGQyUrR
+FgCSzuTgMuePkKR+kOsUA2/uuCP35Rf1A/4Y+gAG3Behn796Atu9+VdvHoaDB+E8jAjg3zY4
+ECFOjEifoGJDYCwwdMzIUCOBkQiPrTnpkaJJlgid1NLDcsQ/jyNOdsSF6o9OnRJ/1jwVoYvQ
+o0jtwDCKtOlQUTcwOXWqtOebqU3bLGsJAGvSenzMcfQqFKcuDWPJAtVoriVCiXAxRmzrluQf
+khmNKbSZV0deia/cofO1Kp9gSXTbHWa0GPDMuIy8QS1ahdovc70gy5J2+VjnmWEuElX5xmFp
+BgkAADs="
+
+set busy 0
+
+#############################################################################
+# colormap for PS output
+#
+set PScolormap(Yellow)	 "0.0 0.0 0.0 setrgbcolor" ;# elevation labels etc.
+set PScolormap(Gold)	 "0.0 0.0 0.0 setrgbcolor" ;# p.a. labels
+set PScolormap(black)	 "0.0 0.0 0.0 setrgbcolor" ;# black used in labels
+set PScolormap(Black)	 "0.5 0.5 0.5 setrgbcolor" ;# black used for night
+set PScolormap(SkyBlue3) "1.0 1.0 1.0 setrgbcolor" ;# bg used for day
+set PScolormap(\#000060) "0.6 0.6 0.6 setrgbcolor" ;# nautical twilight
+set PScolormap(\#0000A0) "0.8 0.8 0.8 setrgbcolor" ;# civil twilight
+set PScolormap(\#3A5FCD) "1.0 1.0 1.0 setrgbcolor" ;# sun over horizon
+
+#############################################################################
+# Baseline data (from ESO etc, follow link VLTI staion positions)
+# "baseline position angle in degrees clockwise from geometric north
+# (i.e. due east = +90 degrees)"
+
+set BaselineRot [expr 18.984*$PI/180.]
+
+set BaselineLen(A0-B0)      8.010;	set BaselinePA(A0-B0)     71.059
+set BaselineLen(A0-B1)     17.891;	set BaselinePA(A0-B1)    134.419
+set BaselineLen(A0-B2)     25.299;	set BaselinePA(A0-B2)    142.558
+set BaselineLen(A0-B3)     33.003;	set BaselinePA(A0-B3)    146.970
+set BaselineLen(A0-B4)     40.794;	set BaselinePA(A0-B4)    149.692
+set BaselineLen(A0-B5)     48.663;	set BaselinePA(A0-B5)    151.542
+set BaselineLen(A0-C0)     15.999;	set BaselinePA(A0-C0)     71.016
+set BaselineLen(A0-C1)     22.625;	set BaselinePA(A0-C1)    116.014
+set BaselineLen(A0-C2)     28.849;	set BaselinePA(A0-C2)    127.334
+set BaselineLen(A0-C3)     35.774;	set BaselinePA(A0-C3)    134.450
+set BaselineLen(A0-D0)     32.011;	set BaselinePA(A0-D0)     71.014
+set BaselineLen(A0-D1)     45.264;	set BaselinePA(A0-D1)    116.008
+set BaselineLen(A0-D2)     57.694;	set BaselinePA(A0-D2)    127.316
+set BaselineLen(A0-E0)     48.012;	set BaselinePA(A0-E0)     71.020
+set BaselineLen(A0-G0)     64.018;	set BaselinePA(A0-G0)     71.020
+set BaselineLen(A0-G1)     90.522;	set BaselinePA(A0-G1)    116.005
+set BaselineLen(A0-G2)     68.352;	set BaselinePA(A0-G2)     50.451
+set BaselineLen(A0-H0)     96.016;	set BaselinePA(A0-H0)     71.012
+set BaselineLen(A0-I1)    111.423;	set BaselinePA(A0-I1)     92.045
+set BaselineLen(A0-J1)    122.389;	set BaselinePA(A0-J1)     82.315
+set BaselineLen(A0-J2)    129.257;	set BaselinePA(A0-J2)     92.811
+set BaselineLen(A0-J3)    132.443;	set BaselinePA(A0-J3)     45.999
+set BaselineLen(A0-J4)    139.961;	set BaselinePA(A0-J4)     40.054
+set BaselineLen(A0-J5)    153.688;	set BaselinePA(A0-J5)     32.360
+set BaselineLen(A0-J6)    169.720;	set BaselinePA(A0-J6)     26.019
+set BaselineLen(A0-K0)    128.003;	set BaselinePA(A0-K0)     71.013
+set BaselineLen(A0-L0)    136.022;	set BaselinePA(A0-L0)     71.010
+set BaselineLen(A0-M0)    144.014;	set BaselinePA(A0-M0)     71.011
+set BaselineLen(A0-U1)     35.789;	set BaselinePA(A0-U1)      7.573
+set BaselineLen(A0-U2)     91.225;	set BaselinePA(A0-U2)     18.886
+set BaselineLen(A0-U3)    135.756;	set BaselinePA(A0-U3)     26.021
+set BaselineLen(A0-U4)    154.511;	set BaselinePA(A0-U4)     49.761
+set BaselineLen(A1-B0)     17.895;	set BaselinePA(A1-B0)      7.607
+set BaselineLen(A1-B1)      8.010;	set BaselinePA(A1-B1)     70.944
+set BaselineLen(A1-B2)     11.314;	set BaselinePA(A1-B2)    115.944
+set BaselineLen(A1-B3)     17.900;	set BaselinePA(A1-B3)    134.434
+set BaselineLen(A1-B4)     25.294;	set BaselinePA(A1-B4)    142.554
+set BaselineLen(A1-B5)     32.979;	set BaselinePA(A1-B5)    146.959
+set BaselineLen(A1-C0)     22.632;	set BaselinePA(A1-C0)     26.000
+set BaselineLen(A1-C1)     15.999;	set BaselinePA(A1-C1)     70.980
+set BaselineLen(A1-C2)     17.887;	set BaselinePA(A1-C2)     97.577
+set BaselineLen(A1-C3)     22.619;	set BaselinePA(A1-C3)    115.998
+set BaselineLen(A1-D0)     35.791;	set BaselinePA(A1-D0)     44.446
+set BaselineLen(A1-D1)     35.784;	set BaselinePA(A1-D1)     97.565
+set BaselineLen(A1-D2)     45.256;	set BaselinePA(A1-D2)    115.998
+set BaselineLen(A1-E0)     50.609;	set BaselinePA(A1-E0)     52.580
+set BaselineLen(A1-G0)     65.988;	set BaselinePA(A1-G0)     56.980
+set BaselineLen(A1-G1)     80.010;	set BaselinePA(A1-G1)    107.871
+set BaselineLen(A1-G2)     75.478;	set BaselinePA(A1-G2)     38.997
+set BaselineLen(A1-H0)     97.342;	set BaselinePA(A1-H0)     61.547
+set BaselineLen(A1-I1)    106.730;	set BaselinePA(A1-I1)     83.998
+set BaselineLen(A1-J1)    120.281;	set BaselinePA(A1-J1)     74.816
+set BaselineLen(A1-J2)    124.206;	set BaselinePA(A1-J2)     85.938
+set BaselineLen(A1-J3)    139.966;	set BaselinePA(A1-J3)     40.050
+set BaselineLen(A1-J4)    148.831;	set BaselinePA(A1-J4)     34.762
+set BaselineLen(A1-J5)    164.164;	set BaselinePA(A1-J5)     27.993
+set BaselineLen(A1-J6)    181.392;	set BaselinePA(A1-J6)     22.441
+set BaselineLen(A1-K0)    129.001;	set BaselinePA(A1-K0)     63.885
+set BaselineLen(A1-L0)    136.962;	set BaselinePA(A1-L0)     64.298
+set BaselineLen(A1-M0)    144.902;	set BaselinePA(A1-M0)     64.668
+set BaselineLen(A1-U1)     50.617;	set BaselinePA(A1-U1)     -0.555
+set BaselineLen(A1-U2)    104.325;	set BaselinePA(A1-U2)     13.481
+set BaselineLen(A1-U3)    147.509;	set BaselinePA(A1-U3)     21.620
+set BaselineLen(A1-U4)    161.007;	set BaselinePA(A1-U4)     44.444
+set BaselineLen(B0-C0)      7.989;	set BaselinePA(B0-C0)     70.973
+set BaselineLen(B0-C1)     17.876;	set BaselinePA(B0-C1)    134.471
+set BaselineLen(B0-C2)     25.295;	set BaselinePA(B0-C2)    142.605
+set BaselineLen(B0-C3)     32.973;	set BaselinePA(B0-C3)    146.995
+set BaselineLen(B0-D0)     24.001;	set BaselinePA(B0-D0)     70.999
+set BaselineLen(B0-D1)     39.997;	set BaselinePA(B0-D1)    124.142
+set BaselineLen(B0-D2)     53.660;	set BaselinePA(B0-D2)    134.447
+set BaselineLen(B0-E0)     40.002;	set BaselinePA(B0-E0)     71.012
+set BaselineLen(B0-G0)     56.008;	set BaselinePA(B0-G0)     71.014
+set BaselineLen(B0-G1)     85.042;	set BaselinePA(B0-G1)    119.821
+set BaselineLen(B0-G2)     60.920;	set BaselinePA(B0-G2)     47.798
+set BaselineLen(B0-H0)     88.006;	set BaselinePA(B0-H0)     71.008
+set BaselineLen(B0-I1)    103.984;	set BaselinePA(B0-I1)     93.626
+set BaselineLen(B0-J1)    114.544;	set BaselinePA(B0-J1)     83.097
+set BaselineLen(B0-J2)    121.853;	set BaselinePA(B0-J2)     94.207
+set BaselineLen(B0-J3)    125.233;	set BaselinePA(B0-J3)     44.446
+set BaselineLen(B0-J4)    133.159;	set BaselinePA(B0-J4)     38.278
+set BaselineLen(B0-J5)    147.522;	set BaselinePA(B0-J5)     30.415
+set BaselineLen(B0-J6)    164.158;	set BaselinePA(B0-J6)     24.041
+set BaselineLen(B0-K0)    119.993;	set BaselinePA(B0-K0)     71.010
+set BaselineLen(B0-L0)    128.012;	set BaselinePA(B0-L0)     71.007
+set BaselineLen(B0-M0)    136.004;	set BaselinePA(B0-M0)     71.008
+set BaselineLen(B0-U1)     33.001;	set BaselinePA(B0-U1)     -4.971
+set BaselineLen(B0-U2)     86.544;	set BaselinePA(B0-U2)     14.694
+set BaselineLen(B0-U3)    130.219;	set BaselinePA(B0-U3)     23.526
+set BaselineLen(B0-U4)    147.077;	set BaselinePA(B0-U4)     48.628
+set BaselineLen(B1-C0)     17.882;	set BaselinePA(B1-C0)      7.552
+set BaselineLen(B1-C1)      7.989;	set BaselinePA(B1-C1)     71.016
+set BaselineLen(B1-C2)     11.312;	set BaselinePA(B1-C2)    116.084
+set BaselineLen(B1-C3)     17.883;	set BaselinePA(B1-C3)    134.481
+set BaselineLen(B1-D0)     28.845;	set BaselinePA(B1-D0)     37.329
+set BaselineLen(B1-D1)     28.847;	set BaselinePA(B1-D1)    104.712
+set BaselineLen(B1-D2)     40.001;	set BaselinePA(B1-D2)    124.146
+set BaselineLen(B1-E0)     43.081;	set BaselinePA(B1-E0)     49.222
+set BaselineLen(B1-G0)     58.247;	set BaselinePA(B1-G0)     55.079
+set BaselineLen(B1-G1)     73.764;	set BaselinePA(B1-G1)    111.611
+set BaselineLen(B1-G2)     68.812;	set BaselinePA(B1-G2)     35.466
+set BaselineLen(B1-H0)     89.449;	set BaselinePA(B1-H0)     60.709
+set BaselineLen(B1-I1)     98.943;	set BaselinePA(B1-I1)     85.046
+set BaselineLen(B1-J1)    112.291;	set BaselinePA(B1-J1)     75.092
+set BaselineLen(B1-J2)    116.487;	set BaselinePA(B1-J2)     86.958
+set BaselineLen(B1-J3)    133.156;	set BaselinePA(B1-J3)     38.280
+set BaselineLen(B1-J4)    142.444;	set BaselinePA(B1-J4)     32.859
+set BaselineLen(B1-J5)    158.395;	set BaselinePA(B1-J5)     26.018
+set BaselineLen(B1-J6)    176.187;	set BaselinePA(B1-J6)     20.490
+set BaselineLen(B1-K0)    121.056;	set BaselinePA(B1-K0)     63.419
+set BaselineLen(B1-L0)    129.010;	set BaselinePA(B1-L0)     63.886
+set BaselineLen(B1-M0)    136.943;	set BaselinePA(B1-M0)     64.302
+set BaselineLen(B1-U1)     48.671;	set BaselinePA(B1-U1)     -9.534
+set BaselineLen(B1-U2)    100.245;	set BaselinePA(B1-U2)      9.619
+set BaselineLen(B1-U3)    142.418;	set BaselinePA(B1-U3)     19.175
+set BaselineLen(B1-U4)    153.880;	set BaselinePA(B1-U4)     43.114
+set BaselineLen(B2-C0)     25.293;	set BaselinePA(B2-C0)     -0.571
+set BaselineLen(B2-C1)     11.306;	set BaselinePA(B2-C1)     25.977
+set BaselineLen(B2-C2)      7.989;	set BaselinePA(B2-C2)     71.073
+set BaselineLen(B2-C3)     11.305;	set BaselinePA(B2-C3)    116.052
+set BaselineLen(B2-D0)     33.941;	set BaselinePA(B2-D0)     26.018
+set BaselineLen(B2-D1)     25.300;	set BaselinePA(B2-D1)     89.459
+set BaselineLen(B2-D2)     33.943;	set BaselinePA(B2-D2)    116.016
+set BaselineLen(B2-E0)     46.647;	set BaselinePA(B2-E0)     40.059
+set BaselineLen(B2-G0)     60.931;	set BaselinePA(B2-G0)     47.826
+set BaselineLen(B2-G1)     68.827;	set BaselinePA(B2-G1)    106.548
+set BaselineLen(B2-G2)     73.751;	set BaselinePA(B2-G2)     30.403
+set BaselineLen(B2-H0)     91.221;	set BaselinePA(B2-H0)     55.759
+set BaselineLen(B2-I1)     97.314;	set BaselinePA(B2-I1)     80.471
+set BaselineLen(B2-J1)    112.007;	set BaselinePA(B2-J1)     71.006
+set BaselineLen(B2-J2)    114.548;	set BaselinePA(B2-J2)     83.107
+set BaselineLen(B2-J3)    137.647;	set BaselinePA(B2-J3)     35.478
+set BaselineLen(B2-J4)    147.521;	set BaselinePA(B2-J4)     30.415
+set BaselineLen(B2-J5)    164.150;	set BaselinePA(B2-J5)     24.043
+set BaselineLen(B2-J6)    182.433;	set BaselinePA(B2-J6)     18.893
+set BaselineLen(B2-K0)    122.371;	set BaselinePA(B2-K0)     59.703
+set BaselineLen(B2-L0)    130.245;	set BaselinePA(B2-L0)     60.392
+set BaselineLen(B2-M0)    138.107;	set BaselinePA(B2-M0)     61.004
+set BaselineLen(B2-U1)     56.578;	set BaselinePA(B2-U1)    -10.864
+set BaselineLen(B2-U2)    107.337;	set BaselinePA(B2-U2)      7.574
+set BaselineLen(B2-U3)    148.791;	set BaselinePA(B2-U3)     17.271
+set BaselineLen(B2-U4)    157.782;	set BaselinePA(B2-U4)     40.545
+set BaselineLen(B3-C0)     32.998;	set BaselinePA(B3-C0)     -4.973
+set BaselineLen(B3-C1)     17.900;	set BaselinePA(B3-C1)      7.524
+set BaselineLen(B3-C2)     11.313;	set BaselinePA(B3-C2)     25.941
+set BaselineLen(B3-C3)      7.989;	set BaselinePA(B3-C3)     70.880
+set BaselineLen(B3-D0)     40.014;	set BaselinePA(B3-D0)     17.872
+set BaselineLen(B3-D1)     24.001;	set BaselinePA(B3-D1)     70.983
+set BaselineLen(B3-D2)     28.836;	set BaselinePA(B3-D2)    104.677
+set BaselineLen(B3-E0)     51.235;	set BaselinePA(B3-E0)     32.346
+set BaselineLen(B3-G0)     64.511;	set BaselinePA(B3-G0)     41.266
+set BaselineLen(B3-G1)     64.498;	set BaselinePA(B3-G1)    100.741
+set BaselineLen(B3-G2)     79.204;	set BaselinePA(B3-G2)     25.996
+set BaselineLen(B3-H0)     93.651;	set BaselinePA(B3-H0)     51.021
+set BaselineLen(B3-I1)     96.322;	set BaselinePA(B3-I1)     75.761
+set BaselineLen(B3-J1)    112.295;	set BaselinePA(B3-J1)     66.912
+set BaselineLen(B3-J2)    113.141;	set BaselinePA(B3-J2)     79.134
+set BaselineLen(B3-J3)    142.457;	set BaselinePA(B3-J3)     32.853
+set BaselineLen(B3-J4)    152.860;	set BaselinePA(B3-J4)     28.133
+set BaselineLen(B3-J5)    170.099;	set BaselinePA(B3-J5)     22.200
+set BaselineLen(B3-J6)    188.826;	set BaselinePA(B3-J6)     17.399
+set BaselineLen(B3-K0)    124.193;	set BaselinePA(B3-K0)     56.073
+set BaselineLen(B3-L0)    131.959;	set BaselinePA(B3-L0)     56.968
+set BaselineLen(B3-M0)    139.725;	set BaselinePA(B3-M0)     57.764
+set BaselineLen(B3-U1)     64.526;	set BaselinePA(B3-U1)    -11.870
+set BaselineLen(B3-U2)    114.565;	set BaselinePA(B3-U2)      5.781
+set BaselineLen(B3-U3)    155.329;	set BaselinePA(B3-U3)     15.522
+set BaselineLen(B3-U4)    161.996;	set BaselinePA(B3-U4)     38.100
+set BaselineLen(B4-C0)     40.790;	set BaselinePA(B4-C0)     -7.689
+set BaselineLen(B4-C1)     25.297;	set BaselinePA(B4-C1)     -0.574
+set BaselineLen(B4-C2)     17.878;	set BaselinePA(B4-C2)      7.558
+set BaselineLen(B4-C3)     11.308;	set BaselinePA(B4-C3)     25.966
+set BaselineLen(B4-D0)     46.649;	set BaselinePA(B4-D0)     11.980
+set BaselineLen(B4-D1)     25.299;	set BaselinePA(B4-D1)     52.586
+set BaselineLen(B4-D2)     25.299;	set BaselinePA(B4-D2)     89.448
+set BaselineLen(B4-E0)     56.568;	set BaselinePA(B4-E0)     26.020
+set BaselineLen(B4-G0)     68.823;	set BaselinePA(B4-G0)     35.485
+set BaselineLen(B4-G1)     60.935;	set BaselinePA(B4-G1)     94.208
+set BaselineLen(B4-G2)     85.039;	set BaselinePA(B4-G2)     22.190
+set BaselineLen(B4-H0)     96.672;	set BaselinePA(B4-H0)     46.570
+set BaselineLen(B4-I1)     95.992;	set BaselinePA(B4-I1)     71.006
+set BaselineLen(B4-J1)    113.147;	set BaselinePA(B4-J1)     62.876
+set BaselineLen(B4-J2)    112.292;	set BaselinePA(B4-J2)     75.097
+set BaselineLen(B4-J3)    147.524;	set BaselinePA(B4-J3)     30.414
+set BaselineLen(B4-J4)    158.401;	set BaselinePA(B4-J4)     26.016
+set BaselineLen(B4-J5)    176.186;	set BaselinePA(B4-J5)     20.490
+set BaselineLen(B4-J6)    195.311;	set BaselinePA(B4-J6)     16.009
+set BaselineLen(B4-K0)    126.487;	set BaselinePA(B4-K0)     52.577
+set BaselineLen(B4-L0)    134.120;	set BaselinePA(B4-L0)     53.657
+set BaselineLen(B4-M0)    141.768;	set BaselinePA(B4-M0)     54.622
+set BaselineLen(B4-U1)     72.455;	set BaselinePA(B4-U1)    -12.652
+set BaselineLen(B4-U2)    121.861;	set BaselinePA(B4-U2)      4.208
+set BaselineLen(B4-U3)    161.971;	set BaselinePA(B4-U3)     13.922
+set BaselineLen(B4-U4)    166.469;	set BaselinePA(B4-U4)     35.793
+set BaselineLen(B5-C0)     48.659;	set BaselinePA(B5-C0)     -9.534
+set BaselineLen(B5-C1)     32.983;	set BaselinePA(B5-C1)     -4.967
+set BaselineLen(B5-C2)     25.288;	set BaselinePA(B5-C2)     -0.568
+set BaselineLen(B5-C3)     17.885;	set BaselinePA(B5-C3)      7.547
+set BaselineLen(B5-D0)     53.666;	set BaselinePA(B5-D0)      7.582
+set BaselineLen(B5-D1)     28.844;	set BaselinePA(B5-D1)     37.332
+set BaselineLen(B5-D2)     24.001;	set BaselinePA(B5-D2)     71.016
+set BaselineLen(B5-E0)     62.480;	set BaselinePA(B5-E0)     20.825
+set BaselineLen(B5-G0)     73.759;	set BaselinePA(B5-G0)     30.422
+set BaselineLen(B5-G1)     58.251;	set BaselinePA(B5-G1)     86.957
+set BaselineLen(B5-G2)     91.213;	set BaselinePA(B5-G2)     18.881
+set BaselineLen(B5-H0)    100.247;	set BaselinePA(B5-H0)     42.405
+set BaselineLen(B5-I1)     96.326;	set BaselinePA(B5-I1)     66.243
+set BaselineLen(B5-J1)    114.554;	set BaselinePA(B5-J1)     58.912
+set BaselineLen(B5-J2)    112.007;	set BaselinePA(B5-J2)     71.012
+set BaselineLen(B5-J3)    152.850;	set BaselinePA(B5-J3)     28.137
+set BaselineLen(B5-J4)    164.155;	set BaselinePA(B5-J4)     24.042
+set BaselineLen(B5-J5)    182.432;	set BaselinePA(B5-J5)     18.893
+set BaselineLen(B5-J6)    201.916;	set BaselinePA(B5-J6)     14.707
+set BaselineLen(B5-K0)    129.240;	set BaselinePA(B5-K0)     49.211
+set BaselineLen(B5-L0)    136.720;	set BaselinePA(B5-L0)     50.456
+set BaselineLen(B5-M0)    144.230;	set BaselinePA(B5-M0)     51.572
+set BaselineLen(B5-U1)     80.410;	set BaselinePA(B5-U1)    -13.281
+set BaselineLen(B5-U2)    129.252;	set BaselinePA(B5-U2)      2.812
+set BaselineLen(B5-U3)    168.743;	set BaselinePA(B5-U3)     12.446
+set BaselineLen(B5-U4)    171.208;	set BaselinePA(B5-U4)     33.606
+set BaselineLen(C0-D0)     16.012;	set BaselinePA(C0-D0)     71.012
+set BaselineLen(C0-D1)     35.784;	set BaselinePA(C0-D1)    134.435
+set BaselineLen(C0-D2)     50.599;	set BaselinePA(C0-D2)    142.568
+set BaselineLen(C0-E0)     32.013;	set BaselinePA(C0-E0)     71.021
+set BaselineLen(C0-G0)     48.019;	set BaselinePA(C0-G0)     71.021
+set BaselineLen(C0-G1)     80.011;	set BaselinePA(C0-G1)    124.132
+set BaselineLen(C0-G2)     53.667;	set BaselinePA(C0-G2)     44.440
+set BaselineLen(C0-H0)     80.017;	set BaselinePA(C0-H0)     71.012
+set BaselineLen(C0-I1)     96.660;	set BaselinePA(C0-I1)     95.451
+set BaselineLen(C0-J1)    106.746;	set BaselinePA(C0-J1)     83.997
+set BaselineLen(C0-J2)    114.556;	set BaselinePA(C0-J2)     95.784
+set BaselineLen(C0-J3)    118.139;	set BaselinePA(C0-J3)     42.716
+set BaselineLen(C0-J4)    126.509;	set BaselinePA(C0-J4)     36.323
+set BaselineLen(C0-J5)    141.548;	set BaselinePA(C0-J5)     28.312
+set BaselineLen(C0-J6)    158.810;	set BaselinePA(C0-J6)     21.935
+set BaselineLen(C0-K0)    112.004;	set BaselinePA(C0-K0)     71.012
+set BaselineLen(C0-L0)    120.023;	set BaselinePA(C0-L0)     71.009
+set BaselineLen(C0-M0)    128.015;	set BaselinePA(C0-M0)     71.010
+set BaselineLen(C0-U1)     32.013;	set BaselinePA(C0-U1)    -18.980
+set BaselineLen(C0-U2)     82.377;	set BaselinePA(C0-U2)     10.067
+set BaselineLen(C0-U3)    124.955;	set BaselinePA(C0-U3)     20.827
+set BaselineLen(C0-U4)    139.721;	set BaselinePA(C0-U4)     47.382
+set BaselineLen(C1-D0)     22.635;	set BaselinePA(C1-D0)     26.039
+set BaselineLen(C1-D1)     22.639;	set BaselinePA(C1-D1)    116.002
+set BaselineLen(C1-D2)     35.783;	set BaselinePA(C1-D2)    134.434
+set BaselineLen(C1-E0)     35.786;	set BaselinePA(C1-E0)     44.467
+set BaselineLen(C1-G0)     50.613;	set BaselinePA(C1-G0)     52.595
+set BaselineLen(C1-G1)     67.897;	set BaselinePA(C1-G1)    116.002
+set BaselineLen(C1-G2)     62.485;	set BaselinePA(C1-G2)     31.203
+set BaselineLen(C1-H0)     81.602;	set BaselinePA(C1-H0)     59.706
+set BaselineLen(C1-I1)     91.213;	set BaselinePA(C1-I1)     86.262
+set BaselineLen(C1-J1)    104.324;	set BaselinePA(C1-J1)     75.404
+set BaselineLen(C1-J2)    108.827;	set BaselinePA(C1-J2)     88.113
+set BaselineLen(C1-J3)    126.510;	set BaselinePA(C1-J3)     36.323
+set BaselineLen(C1-J4)    136.251;	set BaselinePA(C1-J4)     30.783
+set BaselineLen(C1-J5)    152.851;	set BaselinePA(C1-J5)     23.900
+set BaselineLen(C1-J6)    171.219;	set BaselinePA(C1-J6)     18.426
+set BaselineLen(C1-K0)    113.142;	set BaselinePA(C1-K0)     62.884
+set BaselineLen(C1-L0)    121.086;	set BaselinePA(C1-L0)     63.417
+set BaselineLen(C1-M0)    129.012;	set BaselinePA(C1-M0)     63.887
+set BaselineLen(C1-U1)     48.011;	set BaselinePA(C1-U1)    -18.982
+set BaselineLen(C1-U2)     96.675;	set BaselinePA(C1-U2)      5.458
+set BaselineLen(C1-U3)    137.626;	set BaselinePA(C1-U3)     16.559
+set BaselineLen(C1-U4)    146.868;	set BaselinePA(C1-U4)     41.655
+set BaselineLen(C2-D0)     28.857;	set BaselinePA(C2-D0)     14.718
+set BaselineLen(C2-D1)     17.897;	set BaselinePA(C2-D1)     97.552
+set BaselineLen(C2-D2)     28.845;	set BaselinePA(C2-D2)    127.298
+set BaselineLen(C2-E0)     40.012;	set BaselinePA(C2-E0)     34.154
+set BaselineLen(C2-G0)     53.683;	set BaselinePA(C2-G0)     44.458
+set BaselineLen(C2-G1)     62.493;	set BaselinePA(C2-G1)    110.802
+set BaselineLen(C2-G2)     67.891;	set BaselinePA(C2-G2)     26.005
+set BaselineLen(C2-H0)     83.542;	set BaselinePA(C2-H0)     54.312
+set BaselineLen(C2-I1)     89.442;	set BaselinePA(C2-I1)     81.307
+set BaselineLen(C2-J1)    104.018;	set BaselinePA(C2-J1)     71.001
+set BaselineLen(C2-J2)    106.748;	set BaselinePA(C2-J2)     84.001
+set BaselineLen(C2-J3)    131.233;	set BaselinePA(C2-J3)     33.447
+set BaselineLen(C2-J4)    141.556;	set BaselinePA(C2-J4)     28.308
+set BaselineLen(C2-J5)    158.812;	set BaselinePA(C2-J5)     21.934
+set BaselineLen(C2-J6)    177.647;	set BaselinePA(C2-J6)     16.857
+set BaselineLen(C2-K0)    114.549;	set BaselinePA(C2-K0)     58.915
+set BaselineLen(C2-L0)    122.403;	set BaselinePA(C2-L0)     59.699
+set BaselineLen(C2-M0)    130.249;	set BaselinePA(C2-M0)     60.389
+set BaselineLen(C2-U1)     56.019;	set BaselinePA(C2-U1)    -18.982
+set BaselineLen(C2-U2)    104.018;	set BaselinePA(C2-U2)      3.633
+set BaselineLen(C2-U3)    144.217;	set BaselinePA(C2-U3)     14.709
+set BaselineLen(C2-U4)    150.955;	set BaselinePA(C2-U4)     39.005
+set BaselineLen(C3-D0)     35.781;	set BaselinePA(C3-D0)      7.600
+set BaselineLen(C3-D1)     16.012;	set BaselinePA(C3-D1)     71.034
+set BaselineLen(C3-D2)     22.637;	set BaselinePA(C3-D2)    115.998
+set BaselineLen(C3-E0)     45.260;	set BaselinePA(C3-E0)     26.033
+set BaselineLen(C3-G0)     57.701;	set BaselinePA(C3-G0)     37.342
+set BaselineLen(C3-G1)     57.707;	set BaselinePA(C3-G1)    104.694
+set BaselineLen(C3-G2)     73.760;	set BaselinePA(C3-G2)     21.612
+set BaselineLen(C3-H0)     86.180;	set BaselinePA(C3-H0)     49.217
+set BaselineLen(C3-I1)     88.365;	set BaselinePA(C3-I1)     76.202
+set BaselineLen(C3-J1)    104.327;	set BaselinePA(C3-J1)     66.608
+set BaselineLen(C3-J2)    105.241;	set BaselinePA(C3-J2)     79.758
+set BaselineLen(C3-J3)    136.253;	set BaselinePA(C3-J3)     30.783
+set BaselineLen(C3-J4)    147.093;	set BaselinePA(C3-J4)     26.020
+set BaselineLen(C3-J5)    164.933;	set BaselinePA(C3-J5)     20.115
+set BaselineLen(C3-J6)    184.184;	set BaselinePA(C3-J6)     15.401
+set BaselineLen(C3-K0)    116.487;	set BaselinePA(C3-K0)     55.069
+set BaselineLen(C3-L0)    124.219;	set BaselinePA(C3-L0)     56.082
+set BaselineLen(C3-M0)    131.956;	set BaselinePA(C3-M0)     56.977
+set BaselineLen(C3-U1)     64.010;	set BaselinePA(C3-U1)    -18.982
+set BaselineLen(C3-U2)    111.437;	set BaselinePA(C3-U2)      2.053
+set BaselineLen(C3-U3)    150.931;	set BaselinePA(C3-U3)     13.026
+set BaselineLen(C3-U4)    155.339;	set BaselinePA(C3-U4)     36.505
+set BaselineLen(D0-E0)     16.001;	set BaselinePA(D0-E0)     71.030
+set BaselineLen(D0-G0)     32.007;	set BaselinePA(D0-G0)     71.025
+set BaselineLen(D0-G1)     71.557;	set BaselinePA(D0-G1)    134.443
+set BaselineLen(D0-G2)     39.993;	set BaselinePA(D0-G2)     34.123
+set BaselineLen(D0-H0)     64.005;	set BaselinePA(D0-H0)     71.012
+set BaselineLen(D0-I1)     82.350;	set BaselinePA(D0-I1)    100.065
+set BaselineLen(D0-J1)     91.215;	set BaselinePA(D0-J1)     86.258
+set BaselineLen(D0-J2)    100.242;	set BaselinePA(D0-J2)     99.621
+set BaselineLen(D0-J3)    104.317;	set BaselinePA(D0-J3)     38.543
+set BaselineLen(D0-J4)    113.709;	set BaselinePA(D0-J4)     31.727
+set BaselineLen(D0-J5)    130.234;	set BaselinePA(D0-J5)     23.529
+set BaselineLen(D0-J6)    148.814;	set BaselinePA(D0-J6)     17.271
+set BaselineLen(D0-K0)     95.992;	set BaselinePA(D0-K0)     71.012
+set BaselineLen(D0-L0)    104.011;	set BaselinePA(D0-L0)     71.008
+set BaselineLen(D0-M0)    112.003;	set BaselinePA(D0-M0)     71.010
+set BaselineLen(D0-U1)     35.792;	set BaselinePA(D0-U1)    -45.555
+set BaselineLen(D0-U2)     75.903;	set BaselinePA(D0-U2)     -0.559
+set BaselineLen(D0-U3)    115.360;	set BaselinePA(D0-U3)     14.707
+set BaselineLen(D0-U4)    125.216;	set BaselinePA(D0-U4)     44.444
+set BaselineLen(D1-E0)     35.777;	set BaselinePA(D1-E0)      7.583
+set BaselineLen(D1-G0)     45.258;	set BaselinePA(D1-G0)     26.024
+set BaselineLen(D1-G1)     45.258;	set BaselinePA(D1-G1)    116.003
+set BaselineLen(D1-G2)     64.501;	set BaselinePA(D1-G2)     10.744
+set BaselineLen(D1-H0)     71.562;	set BaselinePA(D1-H0)     44.447
+set BaselineLen(D1-I1)     72.432;	set BaselinePA(D1-I1)     77.343
+set BaselineLen(D1-J1)     88.371;	set BaselinePA(D1-J1)     65.807
+set BaselineLen(D1-J2)     89.447;	set BaselinePA(D1-J2)     81.314
+set BaselineLen(D1-J3)    124.463;	set BaselinePA(D1-J3)     26.014
+set BaselineLen(D1-J4)    136.245;	set BaselinePA(D1-J4)     21.252
+set BaselineLen(D1-J5)    155.337;	set BaselinePA(D1-J5)     15.526
+set BaselineLen(D1-J6)    175.643;	set BaselinePA(D1-J6)     11.085
+set BaselineLen(D1-K0)    101.188;	set BaselinePA(D1-K0)     52.575
+set BaselineLen(D1-L0)    108.827;	set BaselinePA(D1-L0)     53.906
+set BaselineLen(D1-M0)    116.489;	set BaselinePA(D1-M0)     55.064
+set BaselineLen(D1-U1)     65.987;	set BaselinePA(D1-U1)    -33.026
+set BaselineLen(D1-U2)    106.746;	set BaselinePA(D1-U2)     -5.996
+set BaselineLen(D1-U3)    143.093;	set BaselinePA(D1-U3)      7.580
+set BaselineLen(D1-U4)    142.437;	set BaselinePA(D1-U4)     32.852
+set BaselineLen(D2-E0)     50.593;	set BaselinePA(D2-E0)     -0.547
+set BaselineLen(D2-G0)     57.688;	set BaselinePA(D2-G0)     14.715
+set BaselineLen(D2-G1)     35.785;	set BaselinePA(D2-G1)     97.571
+set BaselineLen(D2-G2)     78.793;	set BaselinePA(D2-G2)      4.966
+set BaselineLen(D2-H0)     80.007;	set BaselinePA(D2-H0)     34.145
+set BaselineLen(D2-I1)     72.436;	set BaselinePA(D2-I1)     64.663
+set BaselineLen(D2-J1)     91.225;	set BaselinePA(D2-J1)     55.750
+set BaselineLen(D2-J2)     88.006;	set BaselinePA(D2-J2)     71.011
+set BaselineLen(D2-J3)    136.245;	set BaselinePA(D2-J3)     21.252
+set BaselineLen(D2-J4)    148.816;	set BaselinePA(D2-J4)     17.271
+set BaselineLen(D2-J5)    168.762;	set BaselinePA(D2-J5)     12.447
+set BaselineLen(D2-J6)    189.657;	set BaselinePA(D2-J6)      8.663
+set BaselineLen(D2-K0)    107.327;	set BaselinePA(D2-K0)     44.446
+set BaselineLen(D2-L0)    114.558;	set BaselinePA(D2-L0)     46.237
+set BaselineLen(D2-M0)    121.860;	set BaselinePA(D2-M0)     47.813
+set BaselineLen(D2-U1)     81.598;	set BaselinePA(D2-U1)    -30.299
+set BaselineLen(D2-U2)    122.386;	set BaselinePA(D2-U2)     -7.680
+set BaselineLen(D2-U3)    157.564;	set BaselinePA(D2-U3)      4.978
+set BaselineLen(D2-U4)    152.841;	set BaselinePA(D2-U4)     28.131
+set BaselineLen(E0-G0)     16.006;	set BaselinePA(E0-G0)     71.020
+set BaselineLen(E0-G1)     65.966;	set BaselinePA(E0-G1)    146.971
+set BaselineLen(E0-G2)     28.846;	set BaselinePA(E0-G2)     14.665
+set BaselineLen(E0-H0)     48.004;	set BaselinePA(E0-H0)     71.005
+set BaselineLen(E0-I1)     68.799;	set BaselinePA(E0-I1)    106.546
+set BaselineLen(E0-J1)     75.892;	set BaselinePA(E0-J1)     89.433
+set BaselineLen(E0-J2)     86.531;	set BaselinePA(E0-J2)    104.698
+set BaselineLen(E0-J3)     91.225;	set BaselinePA(E0-J3)     33.137
+set BaselineLen(E0-J4)    101.833;	set BaselinePA(E0-J4)     26.014
+set BaselineLen(E0-J5)    120.005;	set BaselinePA(E0-J5)     17.887
+set BaselineLen(E0-J6)    139.951;	set BaselinePA(E0-J6)     11.980
+set BaselineLen(E0-K0)     79.991;	set BaselinePA(E0-K0)     71.009
+set BaselineLen(E0-L0)     88.010;	set BaselinePA(E0-L0)     71.004
+set BaselineLen(E0-M0)     96.002;	set BaselinePA(E0-M0)     71.006
+set BaselineLen(E0-U1)     45.274;	set BaselinePA(E0-U1)    -63.980
+set BaselineLen(E0-U2)     72.458;	set BaselinePA(E0-U2)    -12.654
+set BaselineLen(E0-U3)    107.317;	set BaselinePA(E0-U3)      7.579
+set BaselineLen(E0-U4)    111.138;	set BaselinePA(E0-U4)     40.750
+set BaselineLen(G0-H0)     31.998;	set BaselinePA(G0-H0)     70.998
+set BaselineLen(G0-I1)     56.543;	set BaselinePA(G0-I1)    116.013
+set BaselineLen(G0-J1)     60.915;	set BaselinePA(G0-J1)     94.193
+set BaselineLen(G0-J2)     73.748;	set BaselinePA(G0-J2)    111.611
+set BaselineLen(G0-J3)     79.205;	set BaselinePA(G0-J3)     26.009
+set BaselineLen(G0-J4)     91.221;	set BaselinePA(G0-J4)     18.887
+set BaselineLen(G0-J5)    111.143;	set BaselinePA(G0-J5)     11.271
+set BaselineLen(G0-J6)    132.430;	set BaselinePA(G0-J6)      6.031
+set BaselineLen(G0-K0)     63.985;	set BaselinePA(G0-K0)     71.006
+set BaselineLen(G0-L0)     72.004;	set BaselinePA(G0-L0)     71.001
+set BaselineLen(G0-M0)     79.996;	set BaselinePA(G0-M0)     71.004
+set BaselineLen(G0-U1)     57.713;	set BaselinePA(G0-U1)    -75.289
+set BaselineLen(G0-U2)     72.462;	set BaselinePA(G0-U2)    -25.336
+set BaselineLen(G0-U3)    101.178;	set BaselinePA(G0-U3)     -0.556
+set BaselineLen(G0-U4)     97.648;	set BaselinePA(G0-U4)     36.010
+set BaselineLen(G1-H0)     71.555;	set BaselinePA(G1-H0)      7.576
+set BaselineLen(G1-I1)     46.638;	set BaselinePA(G1-I1)     40.027
+set BaselineLen(G1-J1)     68.826;	set BaselinePA(G1-J1)     35.464
+set BaselineLen(G1-J2)     58.238;	set BaselinePA(G1-J2)     55.065
+set BaselineLen(G1-J3)    132.427;	set BaselinePA(G1-J3)      6.030
+set BaselineLen(G1-J4)    147.079;	set BaselinePA(G1-J4)      3.394
+set BaselineLen(G1-J5)    169.513;	set BaselinePA(G1-J5)      0.305
+set BaselineLen(G1-J6)    192.332;	set BaselinePA(G1-J6)     -2.058
+set BaselineLen(G1-K0)     90.500;	set BaselinePA(G1-K0)     26.006
+set BaselineLen(G1-L0)     96.341;	set BaselinePA(G1-L0)     29.378
+set BaselineLen(G1-M0)    102.451;	set BaselinePA(G1-M0)     32.349
+set BaselineLen(G1-U1)    107.349;	set BaselinePA(G1-U1)    -45.556
+set BaselineLen(G1-U2)    136.246;	set BaselinePA(G1-U2)    -22.359
+set BaselineLen(G1-U3)    163.148;	set BaselinePA(G1-U3)     -7.679
+set BaselineLen(G1-U4)    144.219;	set BaselinePA(G1-U4)     14.697
+set BaselineLen(G2-H0)     40.018;	set BaselinePA(G2-H0)    107.873
+set BaselineLen(G2-I1)     75.470;	set BaselinePA(G2-I1)    129.004
+set BaselineLen(G2-J1)     73.765;	set BaselinePA(G2-J1)    111.600
+set BaselineLen(G2-J2)     91.229;	set BaselinePA(G2-J2)    123.131
+set BaselineLen(G2-J3)     64.516;	set BaselinePA(G2-J3)     41.281
+set BaselineLen(G2-J4)     73.770;	set BaselinePA(G2-J4)     30.428
+set BaselineLen(G2-J5)     91.219;	set BaselinePA(G2-J5)     18.905
+set BaselineLen(G2-J6)    111.144;	set BaselinePA(G2-J6)     11.284
+set BaselineLen(G2-K0)     68.360;	set BaselinePA(G2-K0)     91.572
+set BaselineLen(G2-L0)     75.918;	set BaselinePA(G2-L0)     89.441
+set BaselineLen(G2-M0)     83.539;	set BaselinePA(G2-M0)     87.710
+set BaselineLen(G2-U1)     48.658;	set BaselinePA(G2-U1)    -99.517
+set BaselineLen(G2-U2)     48.664;	set BaselinePA(G2-U2)    -28.440
+set BaselineLen(G2-U3)     78.771;	set BaselinePA(G2-U3)      4.990
+set BaselineLen(G2-U4)     86.168;	set BaselinePA(G2-U4)     49.214
+set BaselineLen(H0-I1)     40.780;	set BaselinePA(H0-I1)    149.723
+set BaselineLen(H0-J1)     33.931;	set BaselinePA(H0-J1)    115.997
+set BaselineLen(H0-J2)     53.664;	set BaselinePA(H0-J2)    134.449
+set BaselineLen(H0-J3)     60.929;	set BaselinePA(H0-J3)      4.214
+set BaselineLen(H0-J4)     75.895;	set BaselinePA(H0-J4)     -0.548
+set BaselineLen(H0-J5)     98.949;	set BaselinePA(H0-J5)     -4.946
+set BaselineLen(H0-J6)    122.374;	set BaselinePA(H0-J6)     -7.673
+set BaselineLen(H0-K0)     31.987;	set BaselinePA(H0-K0)     71.014
+set BaselineLen(H0-L0)     40.006;	set BaselinePA(H0-L0)     71.003
+set BaselineLen(H0-M0)     47.998;	set BaselinePA(H0-M0)     71.008
+set BaselineLen(H0-U1)     86.179;	set BaselinePA(H0-U1)    -87.182
+set BaselineLen(H0-U2)     82.378;	set BaselinePA(H0-U2)    -48.045
+set BaselineLen(H0-U3)     95.980;	set BaselinePA(H0-U3)    -18.992
+set BaselineLen(H0-U4)     73.752;	set BaselinePA(H0-U4)     21.605
+set BaselineLen(I1-J1)     22.642;	set BaselinePA(I1-J1)     26.034
+set BaselineLen(I1-J2)     17.906;	set BaselinePA(I1-J2)     97.582
+set BaselineLen(I1-J3)     97.320;	set BaselinePA(I1-J3)     -9.512
+set BaselineLen(I1-J4)    113.129;	set BaselinePA(I1-J4)    -10.846
+set BaselineLen(I1-J5)    136.924;	set BaselinePA(I1-J5)    -12.267
+set BaselineLen(I1-J6)    160.787;	set BaselinePA(I1-J6)    -13.268
+set BaselineLen(I1-K0)     46.640;	set BaselinePA(I1-K0)     11.986
+set BaselineLen(I1-L0)     51.237;	set BaselinePA(I1-L0)     19.694
+set BaselineLen(I1-M0)     56.575;	set BaselinePA(I1-M0)     26.027
+set BaselineLen(I1-U1)    113.700;	set BaselinePA(I1-U1)    -69.696
+set BaselineLen(I1-U2)    121.850;	set BaselinePA(I1-U2)    -42.184
+set BaselineLen(I1-U3)    136.205;	set BaselinePA(I1-U3)    -22.351
+set BaselineLen(I1-U4)    103.997;	set BaselinePA(I1-U4)      3.636
+set BaselineLen(J1-K0)     25.281;	set BaselinePA(J1-K0)     -0.569
+set BaselineLen(J1-L0)     28.842;	set BaselinePA(J1-L0)     14.721
+set BaselineLen(J1-M0)     33.933;	set BaselinePA(J1-M0)     26.022
+set BaselineLen(J1-U1)    118.129;	set BaselinePA(J1-U1)    -80.690
+set BaselineLen(J1-U2)    115.380;	set BaselinePA(J1-U2)    -52.683
+set BaselineLen(J1-U3)    122.345;	set BaselinePA(J1-U3)    -30.304
+set BaselineLen(J1-U4)     83.510;	set BaselinePA(J1-U4)     -2.294
+set BaselineLen(J2-K0)     48.659;	set BaselinePA(J2-K0)     -9.538
+set BaselineLen(J2-L0)     50.605;	set BaselinePA(J2-L0)     -0.546
+set BaselineLen(J2-M0)     53.669;	set BaselinePA(J2-M0)      7.576
+set BaselineLen(J2-U1)    131.225;	set BaselinePA(J2-U1)    -71.418
+set BaselineLen(J2-U2)    136.012;	set BaselinePA(J2-U2)    -47.061
+set BaselineLen(J2-U3)    145.967;	set BaselinePA(J2-U3)    -28.453
+set BaselineLen(J2-U4)    106.735;	set BaselinePA(J2-U4)     -5.998
+set BaselineLen(J3-K0)     56.569;	set BaselinePA(J3-K0)    152.900
+set BaselineLen(J3-L0)     58.236;	set BaselinePA(J3-L0)    145.064
+set BaselineLen(J3-M0)     60.921;	set BaselinePA(J3-M0)    137.819
+set BaselineLen(J3-U1)    106.748;	set BaselinePA(J3-U1)   -121.975
+set BaselineLen(J3-U2)     65.986;	set BaselinePA(J3-U2)    -94.948
+set BaselineLen(J3-U3)     46.635;	set BaselinePA(J3-U3)    -49.978
+set BaselineLen(J3-U4)     23.984;	set BaselinePA(J3-U4)     71.006
+set BaselineLen(J4-K0)     72.441;	set BaselinePA(J4-K0)    154.687
+set BaselineLen(J4-L0)     73.749;	set BaselinePA(J4-L0)    148.482
+set BaselineLen(J4-M0)     75.887;	set BaselinePA(J4-M0)    142.582
+set BaselineLen(J4-U1)    111.440;	set BaselinePA(J4-U1)   -130.015
+set BaselineLen(J4-U2)     64.016;	set BaselinePA(J4-U2)   -108.978
+set BaselineLen(J4-U3)     33.937;	set BaselinePA(J4-U3)    -64.026
+set BaselineLen(J4-U4)     28.827;	set BaselinePA(J4-U4)    104.712
+set BaselineLen(J5-K0)     96.325;	set BaselinePA(J5-K0)    156.260
+set BaselineLen(J5-L0)     97.310;	set BaselinePA(J5-L0)    151.549
+set BaselineLen(J5-M0)     98.941;	set BaselinePA(J5-M0)    146.980
+set BaselineLen(J5-U1)    122.122;	set BaselinePA(J5-U1)   -140.582
+set BaselineLen(J5-U2)     68.362;	set BaselinePA(J5-U2)   -129.525
+set BaselineLen(J5-U3)     24.015;	set BaselinePA(J5-U3)   -109.019
+set BaselineLen(J5-U4)     46.628;	set BaselinePA(J5-U4)    130.061
+set BaselineLen(J6-K0)    120.261;	set BaselinePA(J6-K0)    157.208
+set BaselineLen(J6-L0)    121.051;	set BaselinePA(J6-L0)    153.418
+set BaselineLen(J6-M0)    122.366;	set BaselinePA(J6-M0)    149.707
+set BaselineLen(J6-U1)    136.241;	set BaselinePA(J6-U1)   -149.213
+set BaselineLen(J6-U2)     80.007;	set BaselinePA(J6-U2)   -145.841
+set BaselineLen(J6-U3)     33.964;	set BaselinePA(J6-U3)   -153.987
+set BaselineLen(J6-U4)     68.337;	set BaselinePA(J6-U4)    140.470
+set BaselineLen(K0-L0)      8.019;	set BaselinePA(K0-L0)     70.959
+set BaselineLen(K0-M0)     16.011;	set BaselinePA(K0-M0)     70.995
+set BaselineLen(K0-U1)    116.485;	set BaselinePA(K0-U1)    -93.036
+set BaselineLen(K0-U2)    101.829;	set BaselinePA(K0-U2)    -63.982
+set BaselineLen(K0-U3)    101.173;	set BaselinePA(K0-U3)    -37.423
+set BaselineLen(K0-U4)     58.246;	set BaselinePA(K0-U4)     -3.042
+set BaselineLen(L0-M0)      7.992;	set BaselinePA(L0-M0)     71.030
+set BaselineLen(L0-U1)    124.213;	set BaselinePA(L0-U1)    -94.056
+set BaselineLen(L0-U2)    107.643;	set BaselinePA(L0-U2)    -67.005
+set BaselineLen(L0-U3)    103.980;	set BaselinePA(L0-U3)    -41.620
+set BaselineLen(L0-U4)     56.564;	set BaselinePA(L0-U4)    -10.875
+set BaselineLen(M0-U1)    131.952;	set BaselinePA(M0-U1)    -94.949
+set BaselineLen(M0-U2)    113.711;	set BaselinePA(M0-U2)    -69.699
+set BaselineLen(M0-U3)    107.312;	set BaselinePA(M0-U3)    -45.561
+set BaselineLen(M0-U4)     56.000;	set BaselinePA(M0-U4)    -18.997
+set BaselineLen(U1-U2)     56.569;	set BaselinePA(U1-U2)     26.016
+set BaselineLen(U1-U3)    102.434;	set BaselinePA(U1-U3)     32.369
+set BaselineLen(U1-U4)    130.231;	set BaselinePA(U1-U4)     60.396
+set BaselineLen(U2-U3)     46.635;	set BaselinePA(U2-U3)     40.082
+set BaselineLen(U2-U4)     89.443;	set BaselinePA(U2-U4)     81.321
+set BaselineLen(U3-U4)     62.463;	set BaselinePA(U3-U4)    110.803
+#
+# some test baselines:
+#
+set BaselineLen(N-S)  100;	set BaselinePA(N-S)	0
+set BaselineLen(E-W)  100;	set BaselinePA(E-W)	90
+
+#############################################################################
+# GUI to push the telescopes
+#
+set Ppos(A0) -32.001 ;	set Qpos(A0)  -48.013
+set Ppos(A1) -32.001 ;	set Qpos(A1)  -64.021
+set Ppos(B0) -23.991 ;	set Qpos(B0)  -48.019
+set Ppos(B1) -23.991 ;	set Qpos(B1)  -64.011
+set Ppos(B2) -23.991 ;	set Qpos(B2)  -72.011
+set Ppos(B3) -23.991 ;	set Qpos(B3)  -80.029
+set Ppos(B4) -23.991 ;	set Qpos(B4)  -88.013
+set Ppos(B5) -23.991 ;	set Qpos(B5)  -96.012
+set Ppos(C0) -16.002 ;	set Qpos(C0)  -48.013
+set Ppos(C1) -16.002 ;	set Qpos(C1)  -64.011
+set Ppos(C2) -16.002 ;	set Qpos(C2)  -72.019
+set Ppos(C3) -16.002 ;	set Qpos(C3)  -80.010
+set Ppos(D0)   0.010 ;	set Qpos(D0)  -48.012
+set Ppos(D1)   0.010 ;	set Qpos(D1)  -80.015
+set Ppos(D2)   0.010 ;	set Qpos(D2)  -96.012
+set Ppos(E0)  16.011 ;	set Qpos(E0)  -48.016
+set Ppos(G0)  32.017 ;	set Qpos(G0)  -48.0172
+set Ppos(G1)  32.020 ;	set Qpos(G1) -112.010
+set Ppos(G2)  31.995 ;	set Qpos(G2)  -24.003
+set Ppos(H0)  64.015 ;	set Qpos(H0)  -48.007
+set Ppos(I1)  72.001 ;	set Qpos(I1)  -87.997
+set Ppos(J1)  88.016 ;	set Qpos(J1)  -71.992
+set Ppos(J2)  88.016 ;	set Qpos(J2)  -96.005
+set Ppos(J3)  88.016 ;	set Qpos(J3)    7.996
+set Ppos(J4)  88.016 ;	set Qpos(J4)   23.993
+set Ppos(J5)  88.016 ;	set Qpos(J5)   47.987
+set Ppos(J6)  88.016 ;	set Qpos(J6)   71.990
+set Ppos(K0)  96.002 ;	set Qpos(K0)  -48.006
+set Ppos(L0) 104.021 ;	set Qpos(L0)  -47.998
+set Ppos(M0) 112.013 ;	set Qpos(M0)  -48.000
+set Ppos(U1) -16.000 ;	set Qpos(U1)  -16.000
+set Ppos(U2)  24.000 ;	set Qpos(U2)   24.000
+set Ppos(U3)  64.0013;	set Qpos(U3)   47.9725
+set Ppos(U4) 112.000 ;	set Qpos(U4)    8.000
+
+set cosb [expr cos($BaselineRot)]
+set sinb [expr sin($BaselineRot)]
+
+foreach st [array names Ppos] {
+    set Xpos($st) [expr 3*( 25 + $Ppos($st)*$cosb - $Qpos($st)*$sinb)]
+    set Ypos($st) [expr 3*(103 - $Ppos($st)*$sinb - $Qpos($st)*$cosb)]
+}
+
+#############################################################################
+
+proc canon_baseline {Baseline} {
+    global BaselinePA
+
+    regsub -all {UT} [string toupper $Baseline] "U" Baseline
+    if ![info exists BaselinePA($Baseline)] {
+	# try swapping...
+
+	if [regexp {([A-U][0-6])-([A-U][0-6])} $Baseline m t1 t2] {
+	    if [info exists BaselinePA($t2-$t1)] {
+		set Baseline "$t2-$t1"
+	    }
+	}
+    }
+    return $Baseline
+}
+
+proc baseline_name {t1 t2} {
+    global BaselineLen
+
+    if {$t1 < $t2} { set bl "$t1-$t2" } else { set bl "$t2-$t1" }
+
+    if [info exists BaselineLen($bl)] {	return $bl } else { return "" }
+}
+
+proc push_telescope {x y} {
+    global Debug Xpos Ypos t1 t2 nextel statID
+
+    set dx1 [expr $Xpos($t1)-$x]; set dy1 [expr $Ypos($t1)-$y]
+    set dx2 [expr $Xpos($t2)-$x]; set dy2 [expr $Ypos($t2)-$y]
+    if {[expr $dx1*$dx1+$dy1*$dy1] < [expr $dx2*$dx2+$dy2*$dy2]} {
+	set nextel 1 ; set t $t1
+    } else {
+	set nextel 2 ; set t $t2
+    }
+    if {$Debug} { puts "push telescope $x $y $nextel" }
+    .bl.c itemconfigure bline -fill orange
+    .bl.c itemconfigure $statID($t) -fill white
+
+    bind .bl.c <Motion> "move_telescope %x %y"
+    bind .bl.c <ButtonRelease> {
+	bind .bl.c <Motion> ""
+	.bl.c itemconfigure bline -fill red
+	set t [expr {($nextel == 1) ? $t1 : $t2 }]
+	.bl.c itemconfigure $statID($t) -fill gold
+    }
+}
+
+proc move_telescope {x y} {
+    global Debug BaselineLen BaselinePA Xpos Ypos t1 t2 nextel
+
+    set minst ""
+    set mind 29999
+    # most lonely is UT2 with UT2-UT3 = 47m < 150pix => squared  = 22500
+    if {$nextel == 1} {	set other $t2 } else { set other $t1 }
+
+    foreach st [array names Xpos] {
+	if {[baseline_name $st $other] != ""} {
+	    set dx [expr $Xpos($st)-$x]
+	    set dy [expr $Ypos($st)-$y]
+	    set d [expr $dx*$dx+$dy*$dy]
+	    if {$mind > $d} {
+		set mind $d
+		set minst $st
+	    }
+	}
+    }
+    #puts "moving to $x $y = $minst"
+
+    if {$minst == ""} { puts "Oops, no next station?!"; return }
+
+    if {$nextel == 1} {	set t1 $minst } else { set t2 $minst }
+    if {$t1 > $t2} {
+	set t $t1; set t1 $t2; set t2 $t
+	set nextel [expr ($nextel+1)%2]
+    }
+    .bl.c itemconfigure bltxt -text "Baseline: $t1 - $t2"
+    .bl.c itemconfigure bllen -text "Length:   $BaselineLen($t1-$t2) m"
+    .bl.c itemconfigure blpa  -text "Angle:    $BaselinePA($t1-$t2) deg"
+    .bl.c coords bline $Xpos($t1) $Ypos($t1) $Xpos($t2) $Ypos($t2)
+}
+
+#############################################################################
+
+proc print_baseline {} {
+    global mydir
+
+    set fname [tk_getSaveFile -initialdir mydir -initialfile "Baseline.ps"\
+		   -defaultextension ".ps" -parent . -title "Select name of cheddar-output"\
+		   -filetypes {{"Postscript Files" {.ps}} {"All Files" *}} ]
+
+    if {$fname != ""} {
+	.bl.c postscript -file $fname -colormode color -rotate 0
+	tk_dialog .w "Print finished" "Your output is in $fname" info 0 "Thank you"
+    }
+}
+
+proc change_baseline {} {
+    global Debug Googlemap Baseline BaselineRot cosb sinb BaselineLen BaselinePA
+    global Ppos Xpos Ypos t1 t2 statID
+
+    if [winfo exists .bl] { destroy .bl }
+    toplevel .bl
+    wm title .bl "Cheddar Baseline"
+    wm resizable .bl no no
+    bind .bl <q> { destroy .bl }
+    canvas .bl.c -width 480 -height 620 -relief raised -bd 2
+    #
+    # (back)ground image
+    #
+    if [file exists $Googlemap] {
+	image create photo groundimg -file $Googlemap
+	.bl.c create image 240 310 -image groundimg
+	set textclr white
+    } else {
+	set textclr black
+    }
+    #
+    # Rail tracks
+    #
+    set minx [expr 3*( 25 + $Ppos(A0)*$cosb + 56*$sinb)]
+    set miny [expr 3*(103 - $Ppos(A0)*$sinb + 56*$cosb)]
+    set maxx [expr 3*( 25 + $Ppos(M0)*$cosb + 56*$sinb)]
+    set maxy [expr 3*(103 - $Ppos(M0)*$sinb + 56*$cosb)]
+    .bl.c create line $minx $miny $maxx $maxy
+
+    foreach rail { A B C D E G H I J K L M } {
+	if [info exists Ppos(${rail}0)] {
+	    set p $Ppos(${rail}0)
+	} else {
+	    set p $Ppos(${rail}1)
+	}
+	set minx [expr 3*( 25 + $p*$cosb + 56*$sinb)]; set maxx $minx
+	set miny [expr 3*(103 - $p*$sinb + 56*$cosb)]; set maxy $miny
+
+	foreach st [array names Ypos "$rail*"] {
+	    set x $Xpos($st)
+	    set y $Ypos($st)
+	    #puts "$rail - $st - $y"
+	    if {$miny > $y} { set minx $x; set miny $y }
+	    if {$maxy < $y} { set maxx $x; set maxy $y }
+	}
+	#puts "$rail = $min - $max"
+	.bl.c create line $minx $miny $maxx $maxy
+    }
+    #
+    # The Baseline
+    #
+    set tlist [split $Baseline -]
+    set t1 [lindex $tlist 0]; if ![info exists Xpos($t1)] { set t1 "U1" }
+    set t2 [lindex $tlist 1]; if ![info exists Xpos($t2)] { set t2 "U2" }
+    #puts "$Baseline $tlist $t1 $t2"
+
+    .bl.c create line $Xpos($t1) $Ypos($t1)\
+	    	      $Xpos($t2) $Ypos($t2) -width 6 -fill red -tag bline
+    .bl.c bind bline <Button-1> { push_telescope %x %y }
+    #
+    # Stations
+    #
+    foreach st [array names Xpos] {
+	#puts "station $st"
+	set x $Xpos($st)
+	set y $Ypos($st)
+	if [regexp {^U} $st] { set r 20 } else { set r 10 }
+	set statID($st) [.bl.c create oval [expr $x-$r] [expr $y-$r] [expr $x+$r] [expr $y+$r] -fill white]
+	.bl.c create text $x $y -text $st
+    }
+    .bl.c itemconfigure $statID($t1) -fill gold
+    .bl.c itemconfigure $statID($t2) -fill gold
+
+    .bl.c create text 8 16 -anchor w -fill $textclr -text "Baseline: $t1 - $t2" -tag bltxt
+    .bl.c create text 8 32 -anchor w -fill $textclr -text "Length:   $BaselineLen($t1-$t2) m"  -tags bllen
+    .bl.c create text 8 48 -anchor w -fill $textclr -text "Angle:    $BaselinePA($t1-$t2) deg" -tags blpa
+    .bl.c create line 42 184 42 142  -fill $textclr -arrow last
+    .bl.c create text 42 142 -text N -fill $textclr -anchor s
+    #.bl.c create image 480 620 -anchor se -image expert
+    frame .bl.f
+    button .bl.q -text "Close Window" -width 12 -command { destroy .bl }
+    button .bl.p -text "Print"        -width 12 -command { print_baseline }
+    button .bl.s -text "Set Baseline" -width 12 -command {
+	set Baseline "$t1-$t2"
+	.c itemconfigure btxt -text "Baseline $Baseline"
+	display_objects
+    }
+
+    bind .bl <p> { print_baseline }
+    pack .bl.q -in .bl.f -side left
+    pack .bl.s -in .bl.f -side right
+    pack .bl.p -in .bl.f
+    pack .bl.c .bl.f -side top -expand y -fill x
+}
+
+#############################################################################
+
+proc set_date {} {
+    global Debug time date JD noonST RA
+
+    if [catch {set time [clock scan $date -gmt 1]} err] {
+	puts $err
+	bell; set date [clock format $time -format {%d %B %Y}]
+    } else {
+	display_all
+    }
+}
+
+proc incr_date {inc} {
+    global time date
+
+    incr time $inc
+    set date [clock format $time -format {%d %B %Y}]
+    set_date
+}
+
+proc change_date {} {
+    global Debug time date
+
+    if [winfo exists .d] { destroy .d }
+    toplevel .d
+    wm title .d "Cheddar Date"
+    bind .d <q> { destroy .d }
+
+    frame .d.pf
+    button .d.pf.d -text "Day+"   -width 6 -command { incr_date 86400 }
+    button .d.pf.m -text "Month+" -width 6 -command { incr_date 2629800 }
+    button .d.pf.y -text "Year+"  -width 6 -command { incr_date 31557600 }
+    pack .d.pf.d .d.pf.m .d.pf.y -side left -expand y -fill x
+    bind .d <KP_Add> { incr_date 86400 }
+    bind .d <plus>  { incr_date 86400 }
+    bind .d <Up>    { incr_date 2629800 }
+    bind .d <Prior> { incr_date 31557600 }
+
+    set date [clock format $time -format {%d %B %Y}]
+    entry .d.e -textvar date
+    frame .d.f
+    button .d.q -text "Close Window" -command { destroy .d }
+    button .d.s -text "Change Date" -command { set_date }
+    bind .d.e <Return> { set_date }
+
+    frame .d.mf -bg black
+    button .d.mf.d -text "Day-"   -width 6 -command { incr_date -86400 }
+    button .d.mf.m -text "Month-" -width 6 -command { incr_date -2629800 }
+    button .d.mf.y -text "Year-"  -width 6 -command { incr_date -31557600 }
+    pack .d.mf.d .d.mf.m .d.mf.y -side left -expand y -fill x
+    bind .d <KP_Subtract> { incr_date -86400 }
+    bind .d <minus> { incr_date -86400 }
+    bind .d <Down>  { incr_date -2629800 }
+    bind .d <Next>  { incr_date -31557600 }
+
+    pack .d.pf -side top -padx 2m -pady 2m -expand y -fill x
+    pack .d.e -side top  -padx 2m -expand y -fill x
+    pack .d.mf -side top -padx 2m -pady 2m -expand y -fill x
+    pack .d.q -padx 2m -pady 2 -side left
+    pack .d.s -padx 2m -pady 2 -side right
+}
+
+proc drag_date {x0} {
+    global drag_date_x0
+
+    set drag_date_x0 $x0
+    # half a day per pixel makes the objects follow the mouse at std window size
+    bind . <Motion> {incr_date [expr ($drag_date_x0-%x)/2*86400]; set drag_date_x0 %x}
+    bind . <ButtonRelease> {
+	bind . <Motion> ""
+    }
+}
+
+#############################################################################
+
+#set Earth(PeriJD) 46068.588054	;# Periheldurchgang-2´400´000
+set Earth(PeriJD)    368.088054	;# Periheldurchgang-2´445'700.5
+set Earth(Motion) 1.7201650948	;# rad per 100 days
+set Earth(HAchse) 1.000018	;# große Halbachse
+set Earth(Excent) 0.016773	;# num.Exzentrizität
+set Earth(ExcFkt) 1.0169161	;# sqrt((1+e)/(1-e))
+set Earth(WPerih) 1.8862122292	;# Winkel Knoten-Per
+set Earth(Knoten) 6.1941735	;# Länge auf. Knoten
+
+#############################################################################
+
+proc JulDate {secs} {
+    set sec2000 [clock scan "1 Jan 2000" -gmt 1]
+    incr secs -$sec2000
+    #puts "[expr $secs/3600./24.] days since 1.jan.2000"
+
+    # subtracted constant used in sidtime calculation,
+    # i.e. JD relative to point in timed used for sidtime (JD 2445700.5)
+    set JD [expr 5844. + $secs/3600./24.]
+    return $JD
+}
+
+proc UTfromGMST {JD GMST} {
+    #puts "JD $JD"
+    set UT [expr ($GMST - 6.656306 - 0.0657098242 * $JD) / 24]
+    set UT [expr ($UT-floor($UT)) * 24. / 1.0027379093]
+    set UTh [expr int($UT)]
+    set UTm [expr round(($UT-$UTh)*60)]
+    return "$UTh:$UTm"
+}
+
+proc GMSTfromUT {JD UT} {
+    #puts "JD $JD"
+    return [expr fmod($UT * 1.0027379093 + 6.656306 + 0.0657098242 * $JD, 24)]
+}
+
+#############################################################################
+# calculates "argument of Latitude" of Earth
+
+proc calc_Sun_pos { date } {
+    global Debug Earth RA De PI PI2
+
+    set M [expr fmod( ($date - $Earth(PeriJD)) * $Earth(Motion)/100.0, $PI2)]
+    #puts "meananom: $M"
+    set E1 $M
+
+    for {set i 0} {$i<100} {incr i} {
+	set E0 $E1
+	set E1 [expr $M + $Earth(Excent) * sin($E0)]
+	if {[expr abs($E0-$E1)] < 1e-7} { break }
+    }
+    set Long [expr 2.0 * atan($Earth(ExcFkt) * tan($E1/2.)) + $Earth(WPerih)]
+    set Long [expr fmod($Long + $Earth(Knoten) + $PI, $PI2)]
+    # we want longitude of sun, not earth
+
+    ##puts [expr $Long - $PI]
+    #
+    # now rotate into equatorial coordinates
+    # eps= 23.439291° = 1.1.2000, 12h */
+    #
+    set sin_eps  0.39777715403
+    set cos_eps  0.91748206401
+
+    set sin_lo [expr sin($Long)]
+    #double f_Lati= p->ap_Lati = 0.0
+
+    set De(Sun) [expr 180./$PI * asin( $sin_eps * $sin_lo )]
+    set RA(Sun) [expr  12./$PI * atan2($cos_eps * $sin_lo, cos($Long))]
+    if {$RA(Sun) < 0.} { set RA(Sun) [expr $RA(Sun) + 24.] }
+}
+
+
+#############################################################################
+#
+# RA in h, De in deg, h in deg, rx & sx are variable names
+# returns abs(hour angle) in hours or 99.
+#
+proc rise_set_x {name h rx sx} {
+    global Debug PI sizex sizey sin_la cos_la longitude noonST RA De $rx $sx
+
+    set de [expr $De($name) * $PI/180.]
+    set t [expr (sin($h*$PI/180) - $sin_la*sin($de)) / ($cos_la*cos($de))]
+    if {$t > 1. || $t < -1.} {
+	if {$Debug} { puts "$name is never $h deg high" }
+	#set $rx -1
+	#set $sx -1
+	return 99.
+    }
+    set t [expr acos($t) * 12./$PI]
+    set t1 [expr fmod($RA($name) - $t + 24, 24)]
+    set t2 [expr fmod($RA($name) + $t + 24, 24)]
+
+    #set UT1 [UTfromGMST $JD $t1]
+    #set UT2 [UTfromGMST $JD $t2]
+    #puts "$name: UT $UT1 ... $UT2"
+
+    # make sure it's positive by adding $sizex more
+    set x1 [expr int(($t1 - $noonST)*$sizex/24 + $sizex) % $sizex]; set $rx $x1
+    set x2 [expr int(($t2 - $noonST)*$sizex/24 + $sizex) % $sizex]; set $sx $x2
+    #puts "$name: ST $t1 ... $t2, x = $x1 $x2"
+    return $t
+}
+
+#############################################################################
+#
+# cartesic method, i.e. Christoph's method
+#
+proc proj_baseline2 { t de BaseN BaseE } {
+    # t = hourangle in hours
+    # de= declination in radian
+    global Debug PI sin_la cos_la lenB thB
+
+    set tr   [expr $t * $PI/12.]
+    set sinH [expr sin($tr)]
+    set cosH [expr cos($tr)]
+
+    # rotate around y-axis into equatorial system
+    set r1 [expr $BaseN * -$sin_la]	;# + $c * cos_la
+    set r2 $BaseE
+    set r3 [expr $BaseN * -$cos_la]
+
+    # rotate into star-centered system
+    set a_E [expr   $r1*$sinH + $r2*$cosH]
+    set b_N [expr (-$r1*$cosH + $r2*$sinH) * sin($de) - $r3*cos($de)]
+    # length along line of sight doesn't matter
+
+    set lenB [expr round(sqrt( $a_E * $a_E + $b_N * $b_N ))]
+    set thB  [expr round(atan2($a_E, $b_N) * 180./$PI)]
+    if {$thB < -90} { incr thB 360 }
+}
+
+#############################################################################
+
+proc draw_baseline {color {code ""}} {
+    global Debug PI thB lenB
+
+    set thB [expr $thB * $PI/180]
+    set lN [expr $lenB * cos($thB)]
+    set lE [expr $lenB * sin($thB)]
+    # remember: y counts downward!
+    .b.c create line [expr 105-$lE/2] [expr 105+$lN/2]\
+		     [expr 105+$lE/2] [expr 105-$lN/2]\
+	-arrow last -width 1 -fill $color
+    if {$code != ""} {
+	.b.c create text [expr 105+$lE/1.9] [expr 105-$lN/1.9] -text $code -fill $color
+    }
+}
+
+proc show_baseline { name ts de } {
+    global Debug PI longitude sin_la cos_la BaseN BaseE JD RA De
+    global thB lenB timestr posstr basestr
+
+    if [winfo exists .b] {
+	.b.c delete all
+	.b.l configure -text $name
+    } else {
+	toplevel .b
+	wm title .b "Cheddar Projected Baseline"
+	bind .b <q> { destroy .b; bind .c <Motion> "" }
+	label .b.l -text $name
+	canvas .b.c -width 210 -height 210 -bg black
+	label .b.times -textvar timestr
+	label .b.pos   -textvar posstr
+	label .b.base  -textvar basestr
+	button .b.q -text "Dismiss" -command {destroy .b; bind .c <Motion> ""}
+	pack .b.l .b.c .b.times .b.pos .b.base -side top
+	pack .b.q -pady 3 -side top
+    }
+    set ts [expr fmod($ts+48., 24)]
+    if {$ts > 12} {set ts [expr $ts-24.]}
+
+    set LST [expr fmod($ts+$RA($name)+24., 24)]
+    set UT  [UTfromGMST $JD [expr $LST + $longitude/15.]]
+    set LSTh [expr int($LST)]
+    set LSTm [expr round(($LST-$LSTh)*60)]
+    set timestr [format "UT %s, LST %d:%02d" $UT $LSTh $LSTm]
+
+    set de [expr $De($name) * $PI/180]
+    set h  [expr round(asin($sin_la*sin($de) + $cos_la*cos($de)*cos($ts*$PI/12.))\
+			 * 180./$PI)]
+    set posstr [format "H.A. %4.1f, Elev. $h°" $ts]
+
+    proj_baseline2 $ts $de 180 0	; draw_baseline yellow N
+    proj_baseline2 $ts $de   0 180	; draw_baseline yellow E
+    proj_baseline2 $ts $de $BaseN $BaseE
+    set basestr [format "Base PA %3.0f°, len %2.0fm" $thB $lenB]
+    draw_baseline green
+}
+
+proc base_in_motion {name noon de x} {
+    global RA sizex
+    bind .c <Motion> "show_baseline \"$name\" \[expr %x*24./$sizex-$RA($name)+$noon\] $de"
+    show_baseline $name [expr $x*24./$sizex-$RA($name)+$noon] $de
+}
+
+
+
+############################### TR (02.11.09) ################################
+set UVcolormap(white)	"0.0 0.0 0.0 setrgbcolor"	;# white is black
+
+proc uv_zoom {x} {
+   global zoom
+   set factor [expr $zoom * $x]
+   show_uvplane $factor
+}
+
+proc print_uvplane {} {
+    global mydir UVcolormap
+
+    set fname [tk_getSaveFile -initialdir mydir -initialfile "uv-plane.ps"\
+		   -defaultextension ".ps" -parent . -title "Select name of cheddar-output"\
+		   -filetypes {{"Postscript Files" {.ps}} {"All Files" *}} ]
+
+    if {$fname != ""} {
+	.u.c postscript -file $fname -colormode color -colormap UVcolormap -rotate 0
+	tk_dialog .w "Print finished" "Your output is in $fname" info 0 "Thank you"
+    }
+}
+
+proc show_uvplane {factor} {
+    global Debug PI longitude sin_la cos_la BaseN BaseE JD RA De
+    global objects noonST thB lenB timestr posstr basestr DrawObj zoom
+
+    set zoom [expr $factor]
+
+    if [winfo exists .u] {
+	.u.c delete all
+	#.u.l configure -text $name
+    } else {
+	toplevel .u
+	wm title .u "Cheddar uv plane"
+	bind .u <q> { destroy .u }
+	canvas .u.c -width 500 -height 500 -bg black
+	button .u.q -text "Dismiss" -command { destroy .u }
+	button .u.p -text " Print " -command { print_uvplane }
+	button .u.i -text "Zoom In" -command { uv_zoom 2 }
+	button .u.o -text "Zoom Out" -command {uv_zoom 0.5}
+	pack .u.c -side top
+	pack .u.q .u.p .u.i .u.o -side left -expand y -fill x -padx 3 -pady 4
+
+	bind .u <Button-5>  { uv_zoom 2 }
+	bind .u <Button-4>  { uv_zoom 0.5 }
+	bind .u <Key-plus>  { uv_zoom 2 }
+	bind .u <Key-equal> { uv_zoom 2 }
+	bind .u <Key-minus> { uv_zoom 0.5 }
+
+	bind .u <p> { print_uvplane }
+    }
+    set index 0
+
+    set dotcolor(0) white
+    set dotcolor(1) red
+    set dotcolor(2) green
+    set dotcolor(3) blue
+    set dotcolor(4) cyan
+    set dotcolor(5) magenta
+    set dotcolor(6) yellow
+
+    foreach name $objects {
+	set check 0
+
+	set index [expr $index + 1]
+	if {$index == 7 } {set index 0}
+
+	if !$DrawObj($name) { continue }
+
+	for {set ts -36} {$ts < 24} {incr ts} {
+	    set st [expr fmod($ts/2.*1.0027379093 + $noonST, 24)]
+	    set de [expr $De($name) * $PI/180.]
+	    set ha [expr $st-$RA($name)]
+	    set h  [expr round(asin( cos($ha*$PI/12.)*$cos_la*cos($de)+$sin_la*sin($de))* 180./$PI)]
+    	    if {$h < 20.} { continue }
+
+            proj_baseline2 $ha $de $BaseN $BaseE
+
+	    set size 2
+	    if {$check == 0} { set size 4; set check 1 }
+
+	    puts "$noonST $dotcolor($index) $size $h $lenB $thB"
+
+            set lenS [expr $zoom*$lenB/0.00001*$PI/180/3600]
+
+            set xoff [expr 250.-$lenS*sin($thB*$PI/180.)]
+            set yoff [expr 250.-$lenS*cos($thB*$PI/180.)]
+
+	    .u.c create oval [expr $xoff-$size] [expr $yoff-$size] [expr $xoff+$size] [expr $yoff+$size] -fill $dotcolor($index)
+	}
+    }
+    .u.c create oval  50  50 450 450  -outline white
+    .u.c create oval 150 150 350 350  -outline white
+    .u.c create text 270 270 -text 0. -fill white
+    .u.c create text 270 370 -text [expr 100/$zoom] -fill white
+    .u.c create text 270 470 -text [expr 200/$zoom] -fill white
+    .u.c create line 250   0 250 500 -fill white
+    .u.c create line   0 250 500 250 -fill white
+    .u.c create line 30 70  70 70  70 30 -arrow both -fill white
+    .u.c create text 20 70 -text E -fill white
+    .u.c create text 70 20 -text N -fill white
+}
+
+
+#############################################################################
+
+proc read_objects {{fname ""}} {
+    global Debug mydir filename objects RA De DrawObj time Baseline
+
+    set append 0
+    if {$fname == "@append@" } {
+	set append 1
+	set fname ""
+    }
+    if {$fname == ""} {
+	set fname [tk_getOpenFile -title "Select object-list" -filetypes {
+	    {"Cheddar Files" {.cheddar}} {"Object lists" {.objects}} {"Text Files" {.txt}} {"All Files" *}}\
+		       -initialdir $mydir ]
+	if {$fname == ""} { return }
+	if !$append {
+	    set objects ""
+	    array unset RA
+	    array unset De
+	    array unset DrawObj
+	    .m.objects delete 1 end
+	    # close Projected Baseline window - may use invalid target
+	    if [winfo exists .b] { destroy .b; bind .c <Motion> "" }
+	}
+    }
+    set filename $fname; # we use the last filename for the name of the ps-file
+    set FP [open $fname "r"]
+    while {[gets $FP line] >= 0} {
+	if {$Debug} { puts $line }
+	if [regexp {^[ \t]*\#} $line] { continue }
+	if [regexp {^(.*[^ \t])[ \t]+0?([0-9]+)[ :]+0?([0-9]+)[ :]+0?([0-9.]+)[ \t]+([-+]?)0?([0-9]+)[ :]+0?([0-9]+)[ :]+0?([0-9.]+)}\
+		$line m	  name        RAh            RAm            RAs            DeS      Ded            Dem            Des] {
+
+	    if {$Debug} { puts "=> $name $RAh:$RAm:$RAs $DeS$Ded:$Dem:$Des" }
+	    if [info exists RA($name)] {
+		tk_dialog .cherr "Too much cheese"\
+		    "You gave object \"[string trim $name]\" twice, that is VERBOTEN!"\
+		    warning 0 "Oops, sorry"
+	    }
+	    lappend objects $name
+	    set RA($name) [expr $RAh + $RAm/60. + $RAs/3600.]
+	    set De($name) [expr $Ded + $Dem/60. + $Des/3600.]
+	    if {$DeS == "-"} { set De($name) -$De($name) }
+	    set DrawObj($name) 1
+	    .m.objects add checkbutton -label "$name" -variable DrawObj($name) -command display_all
+	} elseif [regexp -nocase {^date:[ \t]*(.*)$} $line m date] {
+	    set time [clock scan $date -gmt 1]
+	} elseif [regexp -nocase {^baseline:[ \t]*(.*) *$} $line m Baseline] {
+	    set Baseline $Baseline
+	}
+    }
+    close $FP
+}
+
+#############################################################################
+
+proc squeak_objects {} {
+    global Baseline time objects RA De
+
+    set squeakf [tk_getSaveFile -initialdir mydir -initialfile "saved.cheddar"\
+		     -defaultextension ".txt" -title "Save Cheddar-Objects" -filetypes {
+			 {"Cheddar Files" {.cheddar}}
+			 {"Gouda Files"  {.gouda}}
+			 {"Edam Files"   {.edam}}
+			 {"Brie Files"   {.brie}}
+			 {"Swiss Files"  {.swiss}}
+			 {"Parmesan Files" {.parmesan}}
+			 {"Wensleydale files" {.Wensleydale}}
+			 {"Cheese Files" {.cheese}}
+			 {"Squeak Files" {.squeak}}
+			 {"Object lists" {.objects}}
+			 {"Text Files" {.txt}}
+			 {"All Files" *}}]
+    if {$squeakf == ""} { return }
+
+    set FP [open $squeakf "w"]
+
+    puts $FP "# Cheddar object file $squeakf"
+    puts $FP "# created on [clock format [clock seconds]]"
+    puts $FP "Date:     [clock format $time -format {%d %B %Y}]"
+    puts $FP "Baseline: $Baseline"
+    puts $FP ""
+    foreach squeak $objects {
+	set a $RA($squeak)
+	set d $De($squeak)
+	puts $FP [format "%-20s\t%02d:%02d:%05.2f %3d:%02d:%04.1f" $squeak\
+		      [expr int($a)] [expr int($a*60)%60] [expr fmod($a*3600,60)]\
+		      [expr int($d)] [expr int(abs($d*60))%60] [expr fmod(abs($d*3600),60)]]
+    }
+    close $FP
+}
+
+#############################################################################
+
+proc display_objects {} {
+    global Debug busy PI sizex sizey Font Tsz Color
+    global BaselinePA BaselineLen Baseline BaseN BaseE thB lenB
+    global noonST latitude sin_la cos_la objects RA De DrawObj risex setx
+
+    if {$busy} { return }
+    set busy 1
+
+    # find out where the baseline points (result in radian)
+    # coordinates of baseline in horizontal system
+    #
+    set BPAr  [expr $BaselinePA($Baseline) * $PI/180.]
+    set BaseN [expr $BaselineLen($Baseline) * cos($BPAr)]
+    set BaseE [expr $BaselineLen($Baseline) * sin($BPAr)]
+
+    .c delete obj
+    set y 50
+    foreach name $objects {
+	if !$DrawObj($name) { continue }
+	if {$De($name) <= [expr abs($latitude)-20-90]} {
+	    # object is always higher than 20 deg
+	    # we pretend it reaches 20 deg in lower kulmination
+	    set t20 12.
+	    set risex [expr int(($RA($name) + 12. - $noonST)*$sizex/24 + $sizex) % $sizex]
+	    set setx $risex
+	} else {
+	    set t20 [rise_set_x $name 20 risex setx]	;# hour angle at h=20deg
+	}
+	if {$t20 < 99} {
+	    set de [expr  $De($name) * $PI/180]
+	    if {$risex < $setx} {
+		.c create text [expr ($risex+$setx)/2] $y -font $Font(name-$Tsz)\
+			-anchor s -text $name -fill $Color(graph) -tag obj
+		.c create line $risex $y $setx $y -width 3 -fill $Color(graph) -tag obj
+	    } else {
+		.c create text 0      $y -font $Font(name-$Tsz) -anchor sw -text $name -fill $Color(graph) -tag obj
+		.c create text $sizex $y -font $Font(name-$Tsz) -anchor se -text $name -fill $Color(graph) -tag obj
+		.c create line 0      $y $setx  $y -width 3 -fill $Color(graph) -tag obj
+		.c create line $risex $y $sizex $y -width 3 -fill $Color(graph) -tag obj
+	    }
+	    update
+	    incr y 2
+	    set txtx $risex; incr txtx -10
+	    .c create text $txtx  $y -font $Font(ePAl-$Tsz) -anchor ne -text "Elev:" -fill $Color(graph) -tag obj
+	    set lspc [font metrics $Font(ePAl-$Tsz) -linespace]; incr lspc -2
+	    incr y $lspc
+	    .c create text $txtx $y -font $Font(ePAl-$Tsz) -anchor ne -text "PA:" -fill $Color(base) -tag obj
+	    incr y $lspc
+	    .c create text $txtx $y -font $Font(ePAl-$Tsz) -anchor ne -text "len:" -fill $Color(base) -tag obj
+	    .c create text [expr $setx+10] $y -font $Font(ePAl-$Tsz) -anchor ne -text "m" -fill $Color(base) -tag obj
+	    incr y -$lspc
+	    #
+	    # object culminates at ST = RA
+	    #
+	    # start at smallest integer hour that is closer to 0 than t20
+	    for {set ts [expr int(-$t20)]} {$ts <= $t20} {incr ts} {
+		set x  [expr int(($RA($name) + $ts - $noonST)*$sizex/24 + $sizex) % $sizex]
+		proj_baseline2 $ts $de $BaseN $BaseE; #puts "2=$thB"
+		if {$Debug} {
+		    puts "$name:	$ts hours,	PA $thB,	length $lenB"
+		}
+		.c create text $x [expr $y+$lspc] -font $Font(ePAl-$Tsz) -anchor n -text $lenB -fill $Color(base) -tag obj
+		set id [.c create text $x $y -font $Font(ePAl-$Tsz) -anchor n -text $thB -fill $Color(base) -tag obj]
+		.c bind $id <Button-1> "base_in_motion \"$name\" $noonST $de %x"
+	    }
+	    incr y -$lspc
+	    set last_rx -999
+	    set h 20
+	    while {$h < 90 && [rise_set_x $name $h risex setx] < 99} {
+		set size [font measure $Font(ePAl-$Tsz) $h]
+		#puts "h $h, lastrx $last_rx, risex $risex, setx $setx, size $size"
+		if {$risex-$last_rx < -320 || $risex-$size > $last_rx+2} {
+		    # try to deal with the case that setx is left of risex
+		    if {[expr int($setx+$sizex-$risex) % $sizex -2*$size] < 4 } { break }
+		    .c create text $risex $y -font $Font(ePAl-$Tsz) -anchor n -text $h -fill $Color(graph) -tag obj
+		    .c create text $setx  $y -font $Font(ePAl-$Tsz) -anchor n -text $h -fill $Color(graph) -tag obj
+		    set last_rx $risex
+		}
+		incr h 5
+	    }
+	    set h [expr ($sin_la*sin($de) + $cos_la*cos($de))]
+	    set h [expr ($h >= 1) ? 90 : int(asin($h) * 180/$PI)]
+
+	    .c create text [expr int(($RA($name)-$noonST)*$sizex/24 + $sizex) % $sizex]\
+		$y -font $Font(ePAl-$Tsz) -anchor n -text $h -fill $Color(graph) -tag obj
+	    update
+	    #incr y 58
+	    incr y [expr 3*$lspc + [font metrics $Font(name-$Tsz) -linespace] + 8]
+	    #if {$y > [expr $sizey-66]} { break }
+	}
+    }
+    set sizey [expr $y + 2*[font metrics $Font(par-$Tsz) -linespace] + 20]
+    #puts "display: $sizey, [llength $objects] objects"
+    .c raise txt
+    if [winfo exists .t] { print_table }
+    set busy 0
+}
+
+#############################################################################
+
+proc save_table {} {
+    global Debug filename mydir time Baseline
+
+    regsub {\.(ched.*|objects)$} $filename "" fname
+    set fname [tk_getSaveFile -initialdir mydir -initialfile "$fname.txt"\
+		   -defaultextension ".txt" -parent .t -title "Save Cheddar-table"\
+		   -filetypes {{"Text Files" {.txt}} {"All Files" *}} ]
+    if {$fname != ""} {
+	puts "Save to $fname"
+	set FP [open $fname "w"]
+	puts $FP "Table for objects in $filename"
+	puts $FP "Created by cheddar version 2.7"
+	puts $FP "Date: [clock format $time -format {%d. %B %Y}]"
+	puts $FP "Baseline: $Baseline"
+	puts $FP ""
+	puts -nonewline $FP [.t.t get 1.0 end]
+	close $FP
+    }
+}
+
+proc print_table {} {
+    global Debug PI PI2 filename mydir time Baseline
+    global sin_la cos_la BaseN BaseE noonST objects RA De DrawObj lenB thB
+
+    set thead "Time  LST "
+    foreach name $objects {
+	if {$DrawObj($name)} { append thead [format "|%-12.12s" $name] }
+    }
+    if [winfo exists .t] {
+	.t.t delete 1.0 end
+	.t.t configure -width [string length $thead]
+    } else {
+	toplevel .t
+	wm title .t "Cheddar Table"
+	bind .t <q> { destroy .t }
+	bind .t <s> { save_table }
+
+	text .t.t -width [string length $thead] -height 26 -relief sunken -bd 2 -padx 5 -pady 3
+	frame .t.f
+	button .t.q -text "Close Window" -command { destroy .t }
+	button .t.s -text "Save Table" -command { save_table }
+
+	pack .t.q -in .t.f -padx 5 -pady 2 -side left
+	pack .t.s -in .t.f -padx 5 -pady 2 -side right
+	pack .t.t .t.f -side top -expand y -fill x
+	.t.t tag configure uline -underline y
+    }
+    .t.t insert end "$thead\n"
+    .t.t insert end "          " uline
+    foreach name $objects {
+	if {$DrawObj($name)} { .t.t insert end "|  h  PA len " uline }
+    }
+    .t.t insert end "\n"
+
+    for {set t 0} {$t < 24} {incr t} {
+	set st [expr fmod($t*1.0027379093 + $noonST, 24)]
+
+	.t.t insert end [format " %2d  %02d:%02d" [expr ($t+12)%24] [expr int($st)] [expr int($st*60)%60]]
+
+	foreach name $objects {
+	    if !$DrawObj($name) { continue }
+	    set de [expr $De($name) * $PI/180.]
+	    set ha [expr $st-$RA($name)]
+	    set h  [expr round(asin( cos($ha*$PI/12.)*$cos_la*cos($de)+$sin_la*sin($de))\
+				   * 180./$PI)]
+	    proj_baseline2 $ha $de $BaseN $BaseE
+	    .t.t insert end [format "|%3d %3d %3d " $h $thB $lenB]
+	}
+	.t.t insert end "\n"
+    }
+}
+
+#############################################################################
+
+proc printit {color} {
+    global Debug filename PScolormap mydir sizey
+
+    regsub {\.(ched.*|objects)$} $filename "" fname
+    set fname [tk_getSaveFile -initialdir mydir -initialfile "$fname.ps"\
+	    -defaultextension ".ps" -parent . -title "Select name of cheddar-output"\
+	    -filetypes {{"Postscript Files" {.ps}} {"All Files" *}} ]
+
+    # tk_getSaveFile warns if file exists already
+    #if {[file exists $fname] &&\
+    #	     [tk_dialog .ask "Print Cheddar" "Overwrite existing file $fname?"\
+    #		  questhead 0 "Make it so" "Cancel"]} {
+    #	 set fname ""
+    #}
+    if {$fname != ""} {
+	if {$color} {
+	    .c postscript -file $fname -height $sizey -colormode color -rotate 0
+	} else {
+	    .c postscript -file $fname -height $sizey -colormap PScolormap -colormode gray -rotate y
+	}
+	tk_dialog .w "Print finished" "Your output is in $fname" info 0 "Thank you"
+    }
+}
+
+#############################################################################
+
+proc display_all {} {
+    global Debug busy sizex sizey Font Tsz Color objects DrawObj
+    global time JD Baseline BaselinePA noonST RA De latitude longitude risex setx
+
+    if {$busy} { return }
+    set busy 1
+    #
+    # first make sure we have a valid baseline
+    #
+    set Baseline [canon_baseline $Baseline]
+    if ![info exists BaselinePA($Baseline)] {
+	tk_dialog .cherr "Unknown Baseline"\
+	    "I'm terribly sorry, but I don't know baseline \"$Baseline\". Please use the baseline-window to find out the correct name of your baseline. I will use U1-U3 for the moment"\
+	    warning 0 "Oops, sorry"
+	set Baseline "U1-U3"
+	change_baseline ;# this will just open the baseline-window and return
+    }
+    #
+    # figure out how large the canvas should be
+    #
+    set N_obj 0
+    foreach name $objects { if $DrawObj($name) { incr N_obj } }
+
+    set sizey [expr 70 + 2*[font metrics $Font(par-$Tsz) -linespace] + $N_obj * \
+		   (3*[font metrics $Font(ePAl-$Tsz) -linespace] + [font metrics $Font(name-$Tsz) -linespace] + 4)]
+    .c configure -scrollregion [list 0 0 $sizex $sizey]
+    if {$Debug} { puts "dsp_timescales: $N_obj objects => sizey is $sizey" }
+    #
+    # now clear the canvas and fill it again
+    #
+    .c delete date
+    set JD [JulDate $time]
+    calc_Sun_pos $JD
+    set noonST $RA(Sun)
+    if {$Debug} {
+	puts "[clock format $time] = JD [expr $JD+2445700.5]"
+	puts "Baseline $Baseline"
+	puts "Latitute is $latitude"
+	puts "Sun long [expr round($RA(Sun))]:[expr 60.*fmod($RA(Sun),1.)], lati $De(Sun)"
+	puts "Sun culminates at ST = $noonST"
+	puts "Local midnight at ST = [expr fmod($RA(Sun) + 12., 24)]"
+	puts "Sun culminates at UT = [UTfromGMST $JD [expr $RA(Sun) + $longitude/15.]]"
+    }
+    set y1 [expr $sizey-30]
+    set y2 [expr $y1+5]
+    set id [.c create image $sizex $y1 -anchor se -image expert -tags {txt date}]
+    .c bind $id <Button-1> { about_cheddar }
+
+    for {set t 0} {$t < 24} {incr t} {
+	set x [expr int(($t-$noonST) * $sizex/24)]
+	while {$x < 0} { incr x $sizex }
+	if {$x >= $sizex} { break }
+	.c create line $x 25 $x 30 -fill black -tags date
+	.c create text $x 25 -anchor s -fill black -text [expr $t%24] -tags date -font $Font(ePAl-M)
+
+	set x [expr int(([GMSTfromUT $JD $t] - $longitude/15 - $noonST) * $sizex/24)]
+	while {$x < 0} { incr x $sizex }
+	if {$x >= $sizex} { break }
+	.c create line $x $y1 $x $y2 -fill black -tags date
+	.c create text $x $y2 -anchor n -fill black -text [expr $t%24] -tags date -font $Font(ePAl-M)
+    }
+    incr y1 -1
+    .c create rectangle 0 30 $sizex $y1 -fill $Color(day) -outline $Color(day) -tags date
+    .c create text [expr $sizex/2] 0 -text "Local Sidereal Time" -fill black -anchor n -tags date -font $Font(ePAl-M)
+    .c create text [expr $sizex/2] $sizey -text "Universal Time" -fill black -anchor s -tags date -font $Font(ePAl-M)
+
+    rise_set_x "Sun" -0.833 risex setx
+    .c create rectangle $risex 30 $setx $y1 -outline $Color(civil) -fill $Color(civil) -tags date
+    #RoyalBlue3
+
+    rise_set_x "Sun" -6 risex setx
+    .c create rectangle $risex 30 $setx $y1 -outline $Color(nautic) -fill $Color(nautic) -tags date
+    #DarkBlue
+
+    rise_set_x "Sun" -12 risex setx
+    .c create rectangle $risex 30 $setx $y1 -outline $Color(astro) -fill $Color(astro) -tags date
+    #MidnightBlue
+
+    rise_set_x "Sun" -18 risex setx
+    .c create rectangle $risex 30 $setx $y1 -outline $Color(night) -fill $Color(night) -tags date
+
+    .c create text 4 [expr $y1-3-[font metrics $Font(par-$Tsz) -linespace]]\
+	    -text [clock format $time -format "%d. %B %Y"]\
+	    -fill black -font $Font(par-$Tsz) -anchor sw -tags {txt date}
+    .c create text 4 [expr $y1-3] -text "Baseline $Baseline"\
+	    -fill black -font $Font(par-$Tsz) -anchor sw -tags {txt date btxt}
+
+    set busy 0
+
+    display_objects
+}
+
+#############################################################################
+# mach gui
+# (menu has to be there before we read objects!)
+# (but the canvas has to be created after the -height has been set...)
+#
+wm title . "Cheddar"
+. configure -bg MidnightBlue
+
+#frame .m -relief raised -bd 1
+menu .m
+
+#menubutton .m.f -text "File" -menu .m.f.m -width 8 -anchor w
+menu .m.file
+.m add cascade -menu .m.file -label "File"
+.m.file add command -label "Load..."   -underline 0 -command { read_objects; display_all }
+.m.file add command -label "Append..." -underline 0 -command { read_objects "@append@"; display_all }
+.m.file add command -label "Save..." -underline 0    -command { squeak_objects }
+### TR (02.11.09)
+.m.file add command -label "Show uv-plane" -underline 5 -command { show_uvplane 2}
+.m.file add command -label "Show Table" -underline 5 -command { print_table }
+.m.file add command -label "Print in b/w"  -underline 0 -command { printit 0 }
+.m.file add command -label "Print in color"		-command { printit 1 }
+.m.file add command -label "Quit"	   -underline 0 -command exit
+
+#menubutton .m.s -text "Settings" -menu .m.s.m -width 8 -anchor w
+menu .m.settings
+.m add cascade -menu .m.settings -label "Settings"
+.m.settings add command -label "Baseline" -underline 0 -command { change_baseline }
+.m.settings add command -label "Date"     -underline 0 -command { change_date }
+.m.settings add checkbutton -label "Debug" -variable Debug
+.m.settings add separator
+.m.settings add radiobutton -label "Small text"  -variable Tsz -value "S" -command display_all
+.m.settings add radiobutton -label "Medium text" -variable Tsz -value "M" -command display_all
+.m.settings add radiobutton -label "Large text"  -variable Tsz -value "L" -command display_all
+
+#menubutton .m.o -text "Objects" -menu .m.o.m -width 8 -anchor w
+menu .m.objects
+.m add cascade -menu .m.objects -label "Objects"
+
+#menubutton .m.h -text "Help" -menu .m.h.m -width 8 -anchor e
+menu .m.help
+.m.help add command -label "About" -command about_cheddar
+.m.help add command -label "Keyboard shortcuts" -command help_keys
+.m add cascade -menu .m.help -label "Help"
+
+. configure -menu .m
+
+#############################################################################
+# cmdline arguments
+#
+set objects ""
+set BaselineArg ""
+set timeArg ""
+
+for {set i 0} {$i < $argc} {incr i} {
+    set arg [lindex $argv $i]
+    if {$Debug} { puts "arg no $i = $arg" }
+    switch -glob -- $arg {
+	"-hei*" { incr i; set sizey [lindex $argv $i] }
+	"-h*" { print_help  }
+	"-d*" { set Debug 1 }
+	"-f*" { incr i; read_objects [lindex $argv $i] }
+	"-b*" { incr i; set BaselineArg [lindex $argv $i] }
+	"-t*" { incr i; set timeArg [clock scan [lindex $argv $i] -gmt 1] }
+	"-l*" { incr i; set latitude [lindex $argv $i] }
+	default {
+	    # ok, it's no option, so what is it?
+	    set btmp [canon_baseline $arg]
+	    if [info exists BaselinePA($btmp)] {
+		set BaselineArg $btmp
+	    } elseif [catch {set timeArg [clock scan $arg -gmt 1]}] {
+		# it's not the time
+		if [file exists $arg] {
+		    read_objects $arg
+		} elseif [file exists "$arg.cheddar"] {
+		    read_objects "$arg.cheddar"
+		} else {
+		    puts "I'm terribly sorry, but I don't know what this means:"
+		    puts "    \"$arg\""
+		    puts "It is none of my options, it is no date I can decypher,"
+		    puts "it is not a valid VLTI-baseline, and I cannot find a file with that name."
+		    exit 10
+		}
+	    }
+	}
+    }
+}
+#
+# no objects? Call someone!
+#
+if {$objects == ""} { read_objects }
+if {$objects == ""} { exit 1 }
+#
+# cmdline args override stuff in object-files
+#
+if {$BaselineArg != ""} { set Baseline $BaselineArg }
+if {$timeArg != ""} { set time $timeArg }
+
+set sin_la [expr sin($latitude * $PI/180.)]
+set cos_la [expr cos($latitude * $PI/180.)]
+
+#############################################################################
+
+canvas .c -width $sizex -height 480 -bg white -highlightthick 0\
+    -scrollregion [list 0 0 $sizex $sizey] -yscrollcommand ".s set"
+scrollbar .s -orient v -command ".c yview"
+pack .c -side left -padx 2 -pady 2 -expand y -fill both
+pack .s -side left -padx 0 -pady 2 -fill y
+
+
+display_all
+
+
+bind .c <Configure> {
+    set sizex [winfo width .c]
+    #set sizey [winfo height .c]
+    display_all
+}
+
+bind . <l> { read_objects; display_all }
+bind . <a> { read_objects "@append@"; display_all }
+bind . <s> { squeak_objects }
+### TR (02.11.09)
+bind . <u> { show_uvplane 2.}
+bind . <t> { print_table }
+bind . <p> { printit 0 }
+bind . <P> { printit 1 }
+bind . <q> { exit }
+
+bind . <Left>  { incr_date -86400 }
+bind . <Right> { incr_date  86400 }
+bind . <Down>  { incr_date -2629800 }
+bind . <Up>    { incr_date  2629800 }
+bind . <Next>  { incr_date -31557600 }	;# Page down
+bind . <Prior> { incr_date  31557600 }	;# Page Up
+
+bind . <Button-1> {
+    puts "bush button!"
+    drag_date %x
+}
+
+bind . <b> { change_baseline }
+bind . <d> { change_date }
+bind . <h> { about_cheddar }
+bind . <k> { help_keys }
+
+puts "Squeak!"
+#puts [ttk::style theme names]
+#puts "Using [ttk::style theme use]"
